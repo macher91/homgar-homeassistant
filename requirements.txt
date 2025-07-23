@@ -1,4 +1,0 @@
-requests>=2.0.0
-PyYAML>=5.0.0
-setuptools>=68.1.2
-platformdirs>=4.2.2

@@ -1,0 +1,12 @@
+{
+  "domain": "homgar",
+  "name": "HomGar",
+  "codeowners": ["@mateuszmejsner"],
+  "config_flow": true,
+  "documentation": "https://github.com/macher91/homgar-homeassistant",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/macher91/homgar-homeassistant/issues",
+  "requirements": ["requests>=2.0.0", "paho-mqtt>=1.6.0"],
+  "version": "1.1.0"
+}

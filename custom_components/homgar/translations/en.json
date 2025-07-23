@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HomGar",
+        "description": "Set up your HomGar account to control your irrigation devices.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "area_code": "Area Code"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to HomGar API",
+      "invalid_auth": "Invalid authentication credentials",
+      "no_homes": "No homes found in your account",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "Account is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HomGar Options",
+        "description": "Configure options for your HomGar integration.",
+        "data": {
+          "update_interval": "Update interval (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "start_irrigation": {
+      "name": "Start Irrigation",
+      "description": "Start irrigation for a specific zone with configurable duration.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The device ID (e.g., 'hub_143591' or 'device_143591_1')"
+        },
+        "zone": {
+          "name": "Zone",
+          "description": "The irrigation zone number (1-3)"
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in seconds (default: 600 seconds / 10 minutes)"
+        }
+      }
+    },
+    "stop_irrigation": {
+      "name": "Stop Irrigation",
+      "description": "Stop irrigation for a specific zone.",
+      "fields": {
+        "device_id": {
+          "name": "Device ID",
+          "description": "The device ID (e.g., 'hub_143591' or 'device_143591_1')"
+        },
+        "zone": {
+          "name": "Zone",
+          "description": "The irrigation zone number (1-3)"
+        }
+      }
+    }
+  }
+}

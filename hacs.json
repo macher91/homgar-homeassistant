@@ -1,0 +1,10 @@
+{
+  "name": "HomGar",
+  "content_in_root": false,
+  "filename": "homgar",
+  "country": ["NL", "PL", "DE", "US"],
+  "domains": ["homgar"],
+  "homeassistant": "2025.7.3",
+  "render_readme": true,
+  "zip_release": false
+}

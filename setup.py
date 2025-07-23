@@ -1,39 +1,27 @@
-import os
-from setuptools import setup
-from pathlib import Path
-
-# read the contents of your README file
-this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
-
-version = os.environ['GITHUB_REF_NAME']
+from setuptools import setup, find_packages
 
 setup(
-    name='homgarapi',
-    version=version,
-    description='HomGar API client',
-    long_description=long_description,
-    long_description_content_type='text/markdown',
-    keywords=['homgar'],
-    url='https://github.com/Remboooo/homgarapi',
-    download_url=f"https://github.com/Remboooo/homgarapi/archive/refs/tags/{version}.tar.gz",
-    author='Rembrand van Lakwijk',
-    author_email='rem@lakwijk.com',
-    license='MIT',
-    packages=['homgarapi'],
+    name="homgar-homeassistant",
+    version="1.1.0",
+    description="Home Assistant integration for HomGar irrigation devices (forked from Remboooo/homgarapi)",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    author="Mateusz Mejsner",
+    author_email="mateuszmejsner@gmail.com",
+    url="https://github.com/macher91/homgar-homeassistant",
+    packages=find_packages(),
     install_requires=[
-        'requests>=2.0.0',
-        'PyYAML>=5.0.0',
-        'platformdirs>=4.2.2',
+        "requests>=2.0.0",
     ],
     classifiers=[
-        'Development Status :: 3 - Alpha',
-        'Intended Audience :: Developers',
-
-        'License :: OSI Approved :: MIT License',
-
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Topic :: Home Automation",
     ],
+    python_requires=">=3.9",
 )
