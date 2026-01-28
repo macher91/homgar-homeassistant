@@ -27,25 +27,32 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
+    _LOGGER.info("[DEBUG] [Config Flow] Validating login for %s", data[CONF_EMAIL])
     api = HomgarApi()
     
     try:
         await hass.async_add_executor_job(
             api.login, data[CONF_EMAIL], data[CONF_PASSWORD], data[CONF_AREA_CODE]
         )
+        _LOGGER.debug("[DEBUG] [Config Flow] API login validated")
     except HomgarApiException as err:
+        _LOGGER.warning("[DEBUG] [Config Flow] API login failed: %s", err)
         if err.code == 1005:  # Invalid credentials
             raise InvalidAuth from err
         raise CannotConnect from err
     except Exception as err:
+        _LOGGER.error("[DEBUG] [Config Flow] Unexpected error during validation: %s", err)
         raise CannotConnect from err
 
     # Try to get homes to verify the connection works
     try:
         homes = await hass.async_add_executor_job(api.get_homes)
         if not homes:
+            _LOGGER.warning("[DEBUG] [Config Flow] No homes found in account")
             raise NoHomes
+        _LOGGER.info("[DEBUG] [Config Flow] Validation successful, %d homes found", len(homes))
     except Exception as err:
+        _LOGGER.error("[DEBUG] [Config Flow] Failed to retrieve homes: %s", err)
         raise CannotConnect from err
 
     return {"title": data[CONF_EMAIL]}

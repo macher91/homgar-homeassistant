@@ -1,6 +1,7 @@
 """Base entity for HomGar integration."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -9,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import HomgarDataUpdateCoordinator
 
+_LOGGER = logging.getLogger(__name__)
 
 class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
     """Base class for HomGar entities."""
@@ -22,7 +24,7 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
         """Initialize the entity."""
         super().__init__(coordinator)
         self.device_id = device_id
-        self.device = device
+        
         self._attr_device_info = DeviceInfo(
             identifiers={
                 (DOMAIN, f"{device.mid}_{device.address}")
@@ -34,9 +36,25 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
         )
 
     @property
+    def device(self) -> Any:
+        """
+        Return the current device object from the coordinator data.
+        This ensures we always access the latest object with fresh MQTT data.
+        """
+        return self.coordinator.data.get(self.device_id)
+
+    @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success and self.device is not None
+        # DEBUG: Track availability issues
+        coord_ok = self.coordinator.last_update_success
+        device_present = self.device is not None
+        
+        if not coord_ok or not device_present:
+            _LOGGER.debug("[DEBUG] [Entity Availability] ID=%s, Available=False (CoordSuccess=%s, DevicePresent=%s)", 
+                          self.device_id, coord_ok, device_present)
+            
+        return coord_ok and device_present
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -48,6 +66,10 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
         """Return extra state attributes."""
         attrs = {}
         
+        # Guard against device being None
+        if not self.device:
+            return attrs
+
         # Add connection state if available
         if hasattr(self.device, 'connection_state') and self.device.connection_state is not None:
             attrs["connected"] = self.device.connection_state

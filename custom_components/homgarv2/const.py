@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "homgar"
+DOMAIN: Final = "homgarv2"
 
 # Configuration
 CONF_EMAIL: Final = "email"
@@ -11,8 +11,8 @@ CONF_PASSWORD: Final = "password"
 CONF_AREA_CODE: Final = "area_code"
 
 # Default values
-DEFAULT_AREA_CODE: Final = "33"
-DEFAULT_UPDATE_INTERVAL: Final = 60  # seconds
+DEFAULT_AREA_CODE: Final = "31"
+DEFAULT_UPDATE_INTERVAL: Final = 30  # seconds
 
 # API
 API_BASE_URL: Final = "https://region3.homgarus.com"
@@ -28,7 +28,7 @@ DEVICE_TYPE_SOIL_MOISTURE: Final = "soil_moisture"
 DEVICE_TYPE_RAIN_SENSOR: Final = "rain_sensor"
 DEVICE_TYPE_AIR_SENSOR: Final = "air_sensor"
 DEVICE_TYPE_2_ZONE_TIMER: Final = "2_zone_timer"
-DEVICE_TYPE_DIIVOO_WT11W: Final = "diivoo_wt11w"
+DEVICE_TYPE_HTV405FRF: Final = "htv405frf"
 
 # Sensor types
 SENSOR_TYPE_TEMPERATURE: Final = "temperature"
@@ -50,12 +50,12 @@ ZONE_STATUS_OFF_RECENT: Final = "off_recent"
 ZONE_STATUS_OFF_IDLE: Final = "off_idle"
 
 # Model codes
-MODEL_CODE_DISPLAY_HUB: Final = 264
-MODEL_CODE_SOIL_MOISTURE: Final = 72
+MODEL_CODE_DISPLAY_HUB: Final = 289
+MODEL_CODE_SOIL_MOISTURE: Final = 317
 MODEL_CODE_RAIN_SENSOR: Final = 87
 MODEL_CODE_AIR_SENSOR: Final = 262
 MODEL_CODE_2_ZONE_TIMER: Final = 261
-MODEL_CODE_DIIVOO_WT11W: Final = 271
+MODEL_CODE_HTV405FRF: Final = 38
 
 # Entity icons
 ICON_TEMPERATURE: Final = "mdi:thermometer"
@@ -68,6 +68,10 @@ ICON_ZONE_STATUS: Final = "mdi:information-outline"
 ICON_COUNTDOWN_TIMER: Final = "mdi:timer"
 ICON_DURATION_SETTING: Final = "mdi:timer-settings"
 ICON_IRRIGATION_ZONE: Final = "mdi:sprinkler"
+
+# NEW: Additional Sensor Icons for HCS014ARF and HCS012ARF
+ICON_AIR_SENSOR: Final = "mdi:weather-cloudy"
+ICON_RAIN_SENSOR: Final = "mdi:weather-pouring"
 
 # Services
 SERVICE_START_IRRIGATION: Final = "start_irrigation"

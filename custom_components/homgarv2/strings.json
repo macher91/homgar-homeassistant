@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HomGar v2",
+        "description": "Enter your HomGar member account details.",
+        "data": {
+          "email": "Email Address",
+          "password": "Password",
+          "area_code": "Area Code (e.g., 31)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to HomGar cloud.",
+      "invalid_auth": "Invalid email or password.",
+      "no_homes": "No homes found in this account.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  }
+}
