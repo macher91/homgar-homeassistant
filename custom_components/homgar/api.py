@@ -16,7 +16,7 @@ except ImportError:
 from .devices import HomgarHome, MODEL_CODE_MAPPING, HomgarHubDevice
 from .logutil import TRACE, get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class HomgarApiException(Exception):
@@ -71,6 +71,10 @@ class HomgarApi:
         response = self._request(method, self.base + path, **kwargs).json()
         code = response.get('code')
         if code != 0:
+            logger.error(
+                "HomGar API error code %s on %s %s with kwargs: %s | response: %s",
+                code, method, path, kwargs, response
+            )
             raise HomgarApiException(code, response.get('msg'))
         return response.get('data')
 

@@ -5,3 +5,7 @@
 /.idea
 /homgarapi.egg-info
 __pycache__
+
+# Test env
+/.dev/
+/docker-compose.yaml

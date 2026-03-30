@@ -492,8 +492,9 @@ class DiivooWT11W(HomgarSubDevice):
                     logger.info("Port %d timer value hex: %s", port_num, timer_value_hex)
                     
                     try:
-                        # Convert hex to integer (timer value)
-                        timer_value = int(timer_value_hex, 16)
+                        # Convert hex to integer (timer value) - little endian
+                        timer_bytes = bytes.fromhex(timer_value_hex)
+                        timer_value = int.from_bytes(timer_bytes, "little")
                         old_timer = self.zones[port_num]['countdown_timer']
                         self.zones[port_num]['countdown_timer'] = timer_value
                         
@@ -537,8 +538,9 @@ class DiivooWT11W(HomgarSubDevice):
                     logger.info("Port %d duration value hex: %s", port_num, duration_value_hex)
                     
                     try:
-                        # Convert hex to integer (duration setting)
-                        duration_value = int(duration_value_hex, 16)
+                        # Convert hex to integer (duration setting) - little endian
+                        duration_bytes = bytes.fromhex(duration_value_hex)
+                        duration_value = int.from_bytes(duration_bytes, "little")
                         old_duration = self.zones[port_num]['duration_setting']
                         self.zones[port_num]['duration_setting'] = duration_value
                         

@@ -7,12 +7,20 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import HomgarApi, HomgarApiException
-from .const import CONF_AREA_CODE, CONF_EMAIL, CONF_PASSWORD, DEFAULT_AREA_CODE, DOMAIN
+from .const import (
+    CONF_AREA_CODE,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    DEFAULT_AREA_CODE,
+    DOMAIN,
+    CONF_DURATION,
+    DEFAULT_IRRIGATION_DURATION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +64,14 @@ class HomgarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Create the options flow."""
+        return HomgarOptionsFlow()
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -98,3 +114,28 @@ class InvalidAuth(HomeAssistantError):
 
 class NoHomes(HomeAssistantError):
     """Error to indicate no homes were found."""
+
+
+class HomgarOptionsFlow(config_entries.OptionsFlow):
+    """HomGar config flow options handler."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_DURATION,
+                        default=self.config_entry.options.get(
+                            CONF_DURATION, DEFAULT_IRRIGATION_DURATION
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=7200)),
+                }
+            ),
+        )

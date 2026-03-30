@@ -9,6 +9,7 @@ DOMAIN: Final = "homgar"
 CONF_EMAIL: Final = "email"
 CONF_PASSWORD: Final = "password"
 CONF_AREA_CODE: Final = "area_code"
+CONF_DURATION: Final = "duration"
 
 # Default values
 DEFAULT_AREA_CODE: Final = "33"
@@ -82,4 +83,4 @@ ATTR_DEVICE_ID: Final = "device_id"
 DEFAULT_IRRIGATION_DURATION: Final = 600  # 10 minutes in seconds
 
 # Platforms
-PLATFORMS = ["sensor", "switch"]
+PLATFORMS = ["sensor", "switch", "number"]

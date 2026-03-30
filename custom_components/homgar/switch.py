@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import HomgarConfigEntry
-from .const import ICON_IRRIGATION_ZONE, ZONE_STATUS_ON
+from .const import ICON_IRRIGATION_ZONE, ZONE_STATUS_ON, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
 from .coordinator import HomgarDataUpdateCoordinator
 from .devices import DiivooWT11W, RainPoint2ZoneTimer, HWG0538WRF
 from .entity import HomgarEntity
@@ -84,8 +84,15 @@ class HomgarZoneSwitch(HomgarEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the zone on."""
-        # Default duration can be customized or made configurable
-        duration = kwargs.get("duration", 600)  # 10 minutes default
+        default_duration = self.coordinator.config_entry.options.get(
+            CONF_DURATION, DEFAULT_IRRIGATION_DURATION
+        )
+        # Check if the user set a specific target duration for this zone via the Number slider
+        zone_key = f"{self.device.did}_{self.zone}"
+        target_duration = self.coordinator.target_durations.get(zone_key, default_duration)
+        duration = kwargs.get("duration", target_duration)
+        
+        _LOGGER.debug("Turn on requested for zone %s of %s with duration: %s", self.zone, self.device_id, duration)
         
         success = await self.coordinator.async_control_zone(
             self.device_id, self.zone, 1, duration

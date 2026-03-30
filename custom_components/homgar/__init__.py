@@ -28,7 +28,7 @@ from .coordinator import HomgarDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-type HomgarConfigEntry = ConfigEntry[HomgarDataUpdateCoordinator]
+HomgarConfigEntry = ConfigEntry
 
 # Service schemas
 SERVICE_START_IRRIGATION_SCHEMA = vol.Schema({
@@ -44,6 +44,10 @@ SERVICE_STOP_IRRIGATION_SCHEMA = vol.Schema({
     vol.Required(ATTR_ZONE): vol.All(vol.Coerce(int), vol.Range(min=1, max=3)),
 })
 
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Wymuszenie ładowania testowego dla środowiska Dev."""
+    return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: HomgarConfigEntry) -> bool:
     """Set up HomGar from a config entry."""
@@ -62,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomgarConfigEntry) -> bo
     coordinator = HomgarDataUpdateCoordinator(
         hass, api, email, password, area_code
     )
+    coordinator.config_entry = entry
 
     # Fetch initial data so we have data when entities subscribe
     await coordinator.async_config_entry_first_refresh()
@@ -72,6 +77,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HomgarConfigEntry) -> bo
 
     # Register services
     await _async_register_services(hass, coordinator)
+
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
 

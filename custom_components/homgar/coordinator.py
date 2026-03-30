@@ -41,6 +41,7 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.devices: dict[str, Any] = {}
         self.mqtt_connected = False
         self.mqtt_subscribed = False
+        self.target_durations: dict[str, int] = {}
         self._subscription_check_task = None
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -87,6 +88,12 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             
             # Set up MQTT subscription for real-time updates
+            if not self.api.mqtt_connected and self.mqtt_subscribed:
+                _LOGGER.info("MQTT connection lost, resetting subscription state")
+                await self.hass.async_add_executor_job(self.api.disconnect_mqtt)
+                self.mqtt_subscribed = False
+                self.mqtt_connected = False
+
             if not self.mqtt_subscribed:
                 await self._setup_mqtt_subscription()
             
@@ -196,9 +203,10 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             
             # Process the MQTT message and update device status
             # This will be called from the MQTT thread, so we need to schedule
-            # the update in the Home Assistant event loop
+            # the update in the Home Assistant event loop safely
             _LOGGER.info("Scheduling MQTT update processing task")
-            asyncio.create_task(self._process_mqtt_update(data))
+            import asyncio
+            asyncio.run_coroutine_threadsafe(self._process_mqtt_update(data), self.hass.loop)
             _LOGGER.info("=== END COORDINATOR MQTT UPDATE ===")
             
         except Exception as err:
@@ -334,6 +342,10 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
         try:
+            _LOGGER.debug(
+                "Attempting to control zone %s on device %s (mode=%s, duration=%s)",
+                zone_number, device_id, mode, duration
+            )
             await self.hass.async_add_executor_job(
                 device.control_zone, self.api, zone_number, mode, duration
             )
@@ -341,7 +353,11 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.async_request_refresh()
             return True
         except Exception as err:
-            _LOGGER.error("Error controlling zone: %s", err)
+            _LOGGER.error(
+                "Error controlling zone %s on device %s (mode=%s, duration=%s): %s",
+                zone_number, device_id, mode, duration, err,
+                exc_info=True
+            )
             return False
 
     async def async_shutdown(self) -> None:
