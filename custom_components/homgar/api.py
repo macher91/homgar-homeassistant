@@ -439,173 +439,27 @@ class HomgarApi:
         try:
             topic = msg.topic
             payload = msg.payload.decode('utf-8')
-            logger.info("=== MQTT MESSAGE RECEIVED ===")
-            logger.info("Topic: %s", topic)
-            logger.info("Raw payload: %s", payload)
-            logger.info("Payload length: %d bytes", len(payload))
-            logger.info("Payload hex: %s", payload.encode('utf-8').hex())
+            logger.debug("=== MQTT MESSAGE RECEIVED ===")
+            logger.debug("Topic: %s | Payload: %s", topic, payload)
             
             # Try to parse as JSON
             try:
                 data = json.loads(payload)
-                logger.info("Successfully parsed as JSON:")
-                logger.info("JSON structure: %s", json.dumps(data, indent=2))
-                
-                # Log detailed analysis of the JSON structure
-                self._analyze_mqtt_json_message(data)
                 
                 # Call status callbacks
-                logger.debug("Calling %d status callbacks with parsed data", len(self.status_callbacks))
                 for i, callback in enumerate(self.status_callbacks):
                     try:
-                        logger.debug("Executing callback %d", i)
                         callback(data)
-                        logger.debug("Callback %d executed successfully", i)
                     except Exception as callback_error:
                         logger.error("Error in callback %d: %s", i, callback_error)
                         
             except json.JSONDecodeError as json_error:
-                logger.warning("Failed to parse as JSON: %s", json_error)
-                logger.info("Attempting alternative parsing methods...")
-                
-                # Try to parse as other formats
-                self._analyze_non_json_mqtt_message(payload)
-                
-            logger.info("=== END MQTT MESSAGE ===")
+                logger.debug("Failed to parse MQTT as JSON (might be expected for raw hex payloads): %s", json_error)
                 
         except Exception as e:
             logger.error("Error processing MQTT message: %s", e)
     
-    def _analyze_mqtt_json_message(self, data):
-        """Analyze and log detailed information about JSON MQTT messages"""
-        logger.info("MQTT JSON Analysis:")
-        
-        # Check for common fields
-        if isinstance(data, dict):
-            logger.info("Message type: Dictionary with %d keys", len(data))
-            for key, value in data.items():
-                logger.info("  Key '%s': %s (type: %s)", key, str(value)[:100], type(value).__name__)
-                
-                # Special handling for known fields
-                if key == 'deviceId' or key == 'mid':
-                    logger.info("    → Device identifier found: %s", value)
-                elif key == 'status' or key == 'state':
-                    logger.info("    → Device status/state found: %s", value)
-                elif key == 'timestamp':
-                    logger.info("    → Timestamp found: %s", value)
-                elif key == 'data' and isinstance(value, dict):
-                    logger.info("    → Nested data object with keys: %s", list(value.keys()))
-                    
-        elif isinstance(data, list):
-            logger.info("Message type: List with %d items", len(data))
-            for i, item in enumerate(data[:5]):  # Log first 5 items
-                logger.info("  Item %d: %s (type: %s)", i, str(item)[:100], type(item).__name__)
-        else:
-            logger.info("Message type: %s, value: %s", type(data).__name__, str(data)[:200])
-    
-    def _analyze_non_json_mqtt_message(self, payload):
-        """Analyze non-JSON MQTT messages"""
-        logger.info("Non-JSON MQTT Analysis:")
-        logger.info("Raw string: %s", payload)
-        
-        # Check for common patterns
-        if payload.startswith('11#'):
-            logger.info("  → Appears to be hex-encoded device status (starts with '11#')")
-            hex_part = payload[3:]  # Remove '11#' prefix
-            logger.info("  → Hex data: %s", hex_part)
-            logger.info("  → Hex length: %d characters", len(hex_part))
-            
-            # Try to parse hex patterns
-            self._analyze_hex_device_status(hex_part)
-            
-        elif ',' in payload:
-            logger.info("  → Contains commas, might be CSV format")
-            parts = payload.split(',')
-            logger.info("  → %d parts: %s", len(parts), parts)
-            
-        elif ';' in payload:
-            logger.info("  → Contains semicolons, might be semicolon-separated format")
-            parts = payload.split(';')
-            logger.info("  → %d parts: %s", len(parts), parts)
-            
-        elif '|' in payload:
-            logger.info("  → Contains pipes, might be pipe-separated format")
-            parts = payload.split('|')
-            logger.info("  → %d parts: %s", len(parts), parts)
-            
-        else:
-            logger.info("  → Unknown format, analyzing character patterns")
-            logger.info("  → Contains digits: %s", any(c.isdigit() for c in payload))
-            logger.info("  → Contains alpha: %s", any(c.isalpha() for c in payload))
-            logger.info("  → Contains uppercase: %s", any(c.isupper() for c in payload))
-            logger.info("  → Contains lowercase: %s", any(c.islower() for c in payload))
-    
-    def _analyze_hex_device_status(self, hex_data):
-        """Analyze hex-encoded device status data"""
-        logger.info("Hex Device Status Analysis:")
-        logger.info("Full hex string: %s", hex_data)
-        
-        # Look for known patterns based on DiivooWT11W parsing
-        patterns = {
-            '19D8': 'Port 1 status pattern',
-            '1AD8': 'Port 2 status pattern', 
-            '1BD8': 'Port 3 status pattern',
-            '21B7': 'Port 1 timer pattern',
-            '22B7': 'Port 2 timer pattern',
-            '23B7': 'Port 3 timer pattern',
-            '25AD': 'Port 1 duration pattern',
-            '26AD': 'Port 2 duration pattern',
-            '27AD': 'Port 3 duration pattern',
-        }
-        
-        found_patterns = []
-        for pattern, description in patterns.items():
-            pos = hex_data.find(pattern)
-            if pos >= 0:
-                found_patterns.append((pattern, description, pos))
-                logger.info("  → Found %s at position %d", description, pos)
-                
-                # Extract the full pattern with data
-                if pos + 6 <= len(hex_data):
-                    full_pattern = hex_data[pos:pos + 6]
-                    logger.info("    Full pattern: %s", full_pattern)
-                    
-                    # For status patterns, decode the status
-                    if 'status' in description:
-                        status_code = full_pattern[2:]  # Last 4 chars
-                        status_meanings = {
-                            'D821': 'ON',
-                            'D820': 'OFF (Recent)',
-                            'D800': 'OFF (Idle)'
-                        }
-                        if status_code in status_meanings:
-                            logger.info("    Status meaning: %s", status_meanings[status_code])
-                    
-                    # For timer patterns, extract timer value
-                    elif 'timer' in description and pos + 12 <= len(hex_data):
-                        timer_hex = hex_data[pos + 4:pos + 12]  # 8 hex chars after pattern
-                        try:
-                            timer_value = int(timer_hex, 16)
-                            logger.info("    Timer value: %d seconds", timer_value)
-                        except ValueError:
-                            logger.info("    Timer hex: %s (could not convert)", timer_hex)
-                    
-                    # For duration patterns
-                    elif 'duration' in description and pos + 8 <= len(hex_data):
-                        duration_hex = hex_data[pos + 4:pos + 8]  # 4 hex chars after pattern
-                        try:
-                            duration_value = int(duration_hex, 16)
-                            logger.info("    Duration value: %d", duration_value)
-                        except ValueError:
-                            logger.info("    Duration hex: %s (could not convert)", duration_hex)
-        
-        if not found_patterns:
-            logger.info("  → No known patterns found, raw hex analysis:")
-            # Break into chunks for easier reading
-            chunk_size = 8
-            for i in range(0, len(hex_data), chunk_size):
-                chunk = hex_data[i:i + chunk_size]
-                logger.info("    Chunk %d: %s", i // chunk_size, chunk)
+
 
     def _on_mqtt_disconnect(self, client, userdata, rc):
         """MQTT disconnect callback"""

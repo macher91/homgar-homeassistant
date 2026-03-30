@@ -192,22 +192,12 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _on_mqtt_status_update(self, data: dict) -> None:
         """Handle MQTT status update."""
         try:
-            _LOGGER.info("=== COORDINATOR MQTT STATUS UPDATE ===")
-            _LOGGER.info("Received MQTT status update: %s", data)
-            _LOGGER.info("Data type: %s", type(data).__name__)
-            
-            if isinstance(data, dict):
-                _LOGGER.info("Dictionary keys: %s", list(data.keys()))
-                for key, value in data.items():
-                    _LOGGER.info("  %s: %s (type: %s)", key, str(value)[:100], type(value).__name__)
+            _LOGGER.debug("=== COORDINATOR MQTT STATUS UPDATE ===")
+            _LOGGER.debug("Received update data: %s", data)
             
             # Process the MQTT message and update device status
-            # This will be called from the MQTT thread, so we need to schedule
-            # the update in the Home Assistant event loop safely
-            _LOGGER.info("Scheduling MQTT update processing task")
             import asyncio
             asyncio.run_coroutine_threadsafe(self._process_mqtt_update(data), self.hass.loop)
-            _LOGGER.info("=== END COORDINATOR MQTT UPDATE ===")
             
         except Exception as err:
             _LOGGER.error("Error processing MQTT status update: %s", err)
@@ -215,59 +205,34 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _process_mqtt_update(self, data: dict) -> None:
         """Process MQTT update in Home Assistant event loop."""
         try:
-            _LOGGER.info("=== PROCESSING MQTT UPDATE ===")
-            _LOGGER.info("Processing MQTT update data: %s", data)
-            
             # Find the device that this update is for
             device_id = data.get('deviceId') or data.get('mid')
-            _LOGGER.info("Extracted device ID: %s", device_id)
             
             if not device_id:
                 _LOGGER.debug("No device ID found in MQTT data - cannot process update")
-                _LOGGER.info("Available keys in data: %s", list(data.keys()) if isinstance(data, dict) else "Not a dict")
                 return
                 
             # Find matching device
             device = None
-            _LOGGER.info("Searching for device with ID %s in %d devices", device_id, len(self.devices))
             
             for dev_id, dev in self.devices.items():
-                _LOGGER.debug("Checking device %s (mid: %s)", dev_id, getattr(dev, 'mid', 'NO_MID'))
                 if hasattr(dev, 'mid') and str(dev.mid) == str(device_id):
                     device = dev
-                    _LOGGER.info("Found matching device: %s (%s)", dev_id, type(dev).__name__)
                     break
                     
             if device:
-                _LOGGER.info("Device found - updating status")
-                _LOGGER.info("Device type: %s", type(device).__name__)
-                _LOGGER.info("Device has set_device_status method: %s", hasattr(device, 'set_device_status'))
+                _LOGGER.debug("Found matching device: %s, updating status", type(device).__name__)
                 
                 # Update device status based on MQTT data
                 if hasattr(device, 'set_device_status'):
-                    _LOGGER.info("Calling set_device_status with data: %s", data)
                     device.set_device_status(data)
-                    _LOGGER.info("Device status updated successfully")
-                    
-                    # Log device state after update
-                    if hasattr(device, 'zones'):
-                        _LOGGER.info("Device zones after update:")
-                        for zone_num, zone_data in device.zones.items():
-                            _LOGGER.info("  Zone %d: %s", zone_num, zone_data)
                     
                     # Trigger coordinator update to notify entities
-                    _LOGGER.info("Triggering coordinator update to notify entities")
                     self.async_set_updated_data(dict(self.devices))
-                    _LOGGER.info("Coordinator update triggered")
                 else:
-                    _LOGGER.warning("Device does not have set_device_status method")
+                    _LOGGER.warning("Device %s does not have set_device_status method", type(device).__name__)
             else:
-                _LOGGER.warning("No matching device found for ID %s", device_id)
-                _LOGGER.info("Available devices:")
-                for dev_id, dev in self.devices.items():
-                    _LOGGER.info("  %s: %s (mid: %s)", dev_id, type(dev).__name__, getattr(dev, 'mid', 'NO_MID'))
-                    
-            _LOGGER.info("=== END PROCESSING MQTT UPDATE ===")
+                _LOGGER.warning("No matching device found for MQTT update with ID %s", device_id)
                 
         except Exception as err:
             _LOGGER.error("Error processing MQTT update: %s", err)

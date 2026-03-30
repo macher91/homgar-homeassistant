@@ -354,40 +354,29 @@ class DiivooWT11W(HomgarSubDevice):
         - 26 AD0000 - Port 2: Duration Setting
         - 27 AD0000 - Port 3: Duration Setting
         """
-        logger.info("=== PARSING DIIVOO HEX STATUS ===")
-        logger.info("Raw status string: %s", s)
+        logger.debug("--- PARSING DIIVOO HEX STATUS ---")
         
         self.raw_status = s
         
         if '#' not in s:
-            logger.warning("No '#' found in status string - expected format: 11#[hex_data]")
             return
             
         parts = s.split('#')
         if len(parts) < 2:
-            logger.warning("Invalid format - expected format: 11#[hex_data], got: %s", s)
             return
             
-        prefix = parts[0]
         hex_data = parts[1]
-        
-        logger.info("Status prefix: %s", prefix)
-        logger.info("Hex data: %s", hex_data)
-        logger.info("Hex data length: %d characters", len(hex_data))
-        
         self.hex_status_data = hex_data
+        
+        logger.debug("Hex data: %s", hex_data)
         
         # Parse the hex data according to the documented format
         try:
-            logger.info("Starting hex data parsing...")
             self._parse_hex_status_data(hex_data)
-            logger.info("Hex data parsing completed successfully")
         except Exception as e:
             logger.error("Error parsing hex data: %s", e)
             # If parsing fails, store raw data for debugging
             self.parse_error = str(e)
-            
-        logger.info("=== END PARSING DIIVOO HEX STATUS ===")
     
     def _parse_hex_status_data(self, hex_data):
         """
@@ -419,47 +408,27 @@ class DiivooWT11W(HomgarSubDevice):
         - 1AD820 - port 2 status (off_recent)
         - 1BD800 - port 3 status (off_idle)
         """
-        logger.info("--- Parsing Port Statuses ---")
-        
         status_map = {
             'D821': 'on',
             'D820': 'off_recent',
             'D800': 'off_idle'
         }
         
-        # Look for port status patterns in the hex data
         port_patterns = ['19D8', '1AD8', '1BD8']  # Port 1, 2, 3 patterns
         
         for port_num, pattern in enumerate(port_patterns, 1):
-            logger.info("Searching for Port %d pattern: %s", port_num, pattern)
-            
-            # Find the pattern in the hex data
             pattern_pos = hex_data.find(pattern)
-            logger.info("Pattern %s found at position: %d", pattern, pattern_pos)
             
             if pattern_pos >= 0 and pattern_pos + 6 <= len(hex_data):
-                # Extract the full 6-character pattern (e.g., '19D821')
                 full_pattern = hex_data[pattern_pos:pattern_pos + 6]
-                # Extract just the status code (last 4 characters)
-                status_hex = full_pattern[2:]  # Get 'D821', 'D820', etc.
-                
-                logger.info("Port %d full pattern: %s", port_num, full_pattern)
-                logger.info("Port %d status hex: %s", port_num, status_hex)
+                status_hex = full_pattern[2:]
                 
                 if status_hex in status_map:
-                    old_active = self.zones[port_num]['active']
-                    old_status = self.zones[port_num]['status']
-                    
                     self.zones[port_num]['active'] = status_map[status_hex] == 'on'
                     self.zones[port_num]['status'] = status_map[status_hex]
-                    
-                    logger.info("Port %d status updated:", port_num)
-                    logger.info("  Active: %s → %s", old_active, self.zones[port_num]['active'])
-                    logger.info("  Status: %s → %s", old_status, self.zones[port_num]['status'])
+                    logger.debug("Port %d status updated: %s", port_num, status_map[status_hex])
                 else:
                     logger.warning("Port %d unknown status hex: %s", port_num, status_hex)
-            else:
-                logger.warning("Port %d pattern not found or incomplete", port_num)
     
     def _parse_countdown_timers_precise(self, hex_data):
         """
@@ -469,43 +438,24 @@ class DiivooWT11W(HomgarSubDevice):
         - 22B700000000 - Port 2 countdown timer
         - 23B700000000 - Port 3 countdown timer
         """
-        logger.info("--- Parsing Countdown Timers ---")
-        
-        timer_patterns = ['21B7', '22B7', '23B7']  # Port 1, 2, 3 timer patterns
+        timer_patterns = ['21B7', '22B7', '23B7']
         
         for port_num, pattern in enumerate(timer_patterns, 1):
-            logger.info("Searching for Port %d timer pattern: %s", port_num, pattern)
-            
-            # Find the pattern in the hex data
             pattern_pos = hex_data.find(pattern)
-            logger.info("Timer pattern %s found at position: %d", pattern, pattern_pos)
             
             if pattern_pos >= 0 and pattern_pos + 12 <= len(hex_data):
-                # Extract the full timer data (pattern + 8 hex chars)
                 timer_hex = hex_data[pattern_pos:pattern_pos + 12]
-                
-                logger.info("Port %d timer hex: %s", port_num, timer_hex)
-                
                 if timer_hex.startswith(pattern):
-                    # Extract the 8-digit timer value (skip the 4-char pattern)
-                    timer_value_hex = timer_hex[4:]  # Skip '21B7', '22B7', etc.
-                    logger.info("Port %d timer value hex: %s", port_num, timer_value_hex)
-                    
+                    timer_value_hex = timer_hex[4:]
                     try:
-                        # Convert hex to integer (timer value) - little endian
                         timer_bytes = bytes.fromhex(timer_value_hex)
                         timer_value = int.from_bytes(timer_bytes, "little")
-                        old_timer = self.zones[port_num]['countdown_timer']
-                        self.zones[port_num]['countdown_timer'] = timer_value
                         
-                        logger.info("Port %d timer updated: %d → %d seconds", port_num, old_timer, timer_value)
+                        self.zones[port_num]['countdown_timer'] = timer_value
+                        logger.debug("Port %d timer updated: %d seconds", port_num, timer_value)
                     except ValueError as e:
-                        logger.error("Port %d timer conversion error: %s", port_num, e)
+                        logger.debug("Port %d timer conversion error: %s", port_num, e)
                         self.zones[port_num]['countdown_timer'] = 0
-                else:
-                    logger.warning("Port %d timer hex doesn't start with expected pattern", port_num)
-            else:
-                logger.warning("Port %d timer pattern not found or incomplete", port_num)
     
     def _parse_duration_settings_precise(self, hex_data):
         """
@@ -515,102 +465,42 @@ class DiivooWT11W(HomgarSubDevice):
         - 26AD0000 - Port 2 duration setting
         - 27AD0000 - Port 3 duration setting
         """
-        logger.info("--- Parsing Duration Settings ---")
-        
-        duration_patterns = ['25AD', '26AD', '27AD']  # Port 1, 2, 3 duration patterns
+        duration_patterns = ['25AD', '26AD', '27AD']
         
         for port_num, pattern in enumerate(duration_patterns, 1):
-            logger.info("Searching for Port %d duration pattern: %s", port_num, pattern)
-            
-            # Find the pattern in the hex data
             pattern_pos = hex_data.find(pattern)
-            logger.info("Duration pattern %s found at position: %d", pattern, pattern_pos)
             
             if pattern_pos >= 0 and pattern_pos + 8 <= len(hex_data):
-                # Extract the full duration data (pattern + 4 hex chars)
                 duration_hex = hex_data[pattern_pos:pattern_pos + 8]
-                
-                logger.info("Port %d duration hex: %s", port_num, duration_hex)
-                
                 if duration_hex.startswith(pattern):
-                    # Extract the 4-digit duration value (skip the 4-char pattern)
-                    duration_value_hex = duration_hex[4:]  # Skip '25AD', '26AD', etc.
-                    logger.info("Port %d duration value hex: %s", port_num, duration_value_hex)
-                    
+                    duration_value_hex = duration_hex[4:]
                     try:
-                        # Convert hex to integer (duration setting) - little endian
                         duration_bytes = bytes.fromhex(duration_value_hex)
                         duration_value = int.from_bytes(duration_bytes, "little")
-                        old_duration = self.zones[port_num]['duration_setting']
-                        self.zones[port_num]['duration_setting'] = duration_value
                         
-                        logger.info("Port %d duration updated: %d → %d", port_num, old_duration, duration_value)
+                        self.zones[port_num]['duration_setting'] = duration_value
+                        logger.debug("Port %d duration updated: %d", port_num, duration_value)
                     except ValueError as e:
-                        logger.error("Port %d duration conversion error: %s", port_num, e)
+                        logger.debug("Port %d duration conversion error: %s", port_num, e)
                         self.zones[port_num]['duration_setting'] = 0
-                else:
-                    logger.warning("Port %d duration hex doesn't start with expected pattern", port_num)
-            else:
-                logger.warning("Port %d duration pattern not found or incomplete", port_num)
 
     def set_device_status(self, api_obj: dict) -> None:
         """
         Override to handle additional status fields specific to the timer.
         """
-        logger.info("=== DIIVOO DEVICE STATUS UPDATE ===")
-        logger.info("DiivooWT11W.set_device_status called with: %s", api_obj)
-        
+        logger.debug("=== DIIVOO DEVICE STATUS UPDATE ===")
         dev_id = api_obj['id']
         val = api_obj['value']
         
-        logger.info("Device ID: %s", dev_id)
-        logger.info("Value: %s", val)
-        logger.info("Expected device address: D%02d", self.address)
-        
         if dev_id == 'connected':
-            old_state = self.connection_state
             self.connection_state = int(val) == 1
-            logger.info("Connection state updated: %s → %s", old_state, self.connection_state)
-            
         elif dev_id == 'state':
-            # State format appears to be "0,-15" - store raw for now
-            old_state = self.device_state
             self.device_state = val
-            logger.info("Device state updated: %s → %s", old_state, self.device_state)
-            
         elif dev_id == f"D{self.address:02d}":
-            logger.info("Processing device-specific status for address %d", self.address)
-            logger.info("Raw hex status value: %s", val)
-            
-            # Store zones before parsing
-            zones_before = {}
-            for zone_num in [1, 2, 3]:
-                zones_before[zone_num] = dict(self.zones[zone_num])
-            
-            # Handle device-specific status parsing
             self._parse_device_specific_status_d_value(val)
-            
-            # Log changes
-            logger.info("Zone status changes:")
-            for zone_num in [1, 2, 3]:
-                before = zones_before[zone_num]
-                after = self.zones[zone_num]
-                if before != after:
-                    logger.info("  Zone %d: %s → %s", zone_num, before, after)
-                    for key in ['active', 'status', 'countdown_timer', 'duration_setting']:
-                        if before.get(key) != after.get(key):
-                            logger.info("    %s: %s → %s", key, before.get(key), after.get(key))
-                else:
-                    logger.info("  Zone %d: No changes", zone_num)
         else:
-            logger.info("Unhandled device ID: %s", dev_id)
-            # Handle RF RSSI and other general status if needed
             if hasattr(self, 'rf_rssi'):
-                # This is a simplified approach - in a real implementation,
-                # you might need to parse the general status format
                 pass
-                
-        logger.info("=== END DIIVOO DEVICE STATUS UPDATE ===")
 
     def get_device_status_ids(self):
         """
