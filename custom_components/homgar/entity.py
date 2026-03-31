@@ -25,7 +25,7 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
         self.device = device
         self._attr_device_info = DeviceInfo(
             identifiers={
-                (DOMAIN, f"{device.mid}_{device.address}")
+                (DOMAIN, device.did)
             },
             name=device.name,
             manufacturer="HomGar",

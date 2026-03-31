@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import HomgarConfigEntry
 from .const import ICON_IRRIGATION_ZONE, ZONE_STATUS_ON, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
 from .coordinator import HomgarDataUpdateCoordinator
-from .devices import DiivooWT11W, RainPoint2ZoneTimer, HWG0538WRF
+from .devices import DiivooWT11W, RainPoint2ZoneTimer, HWG0538WRF, HTV405FRF
 from .entity import HomgarEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +39,12 @@ async def async_setup_entry(
                 entities.append(
                     HomgarZoneSwitch(coordinator, device_id, device, zone)
                 )
+        elif isinstance(device, HTV405FRF):
+            for zone in [1, 2, 3, 4]:
+                entities.append(
+                    HomgarZoneSwitch(coordinator, device_id, device, zone)
+                )
+
 
     async_add_entities(entities)
 
@@ -63,8 +69,9 @@ class HomgarZoneSwitch(HomgarEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the zone is on."""
-        if isinstance(self.device, DiivooWT11W):
+        if isinstance(self.device, (DiivooWT11W, HTV405FRF)):
             return self.device.is_zone_active(self.zone)
+
         # For other timer types, implement as needed
         return False
 

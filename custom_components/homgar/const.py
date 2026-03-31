@@ -30,6 +30,7 @@ DEVICE_TYPE_RAIN_SENSOR: Final = "rain_sensor"
 DEVICE_TYPE_AIR_SENSOR: Final = "air_sensor"
 DEVICE_TYPE_2_ZONE_TIMER: Final = "2_zone_timer"
 DEVICE_TYPE_DIIVOO_WT11W: Final = "diivoo_wt11w"
+DEVICE_TYPE_HTV405FRF: Final = "htv405frf"
 
 # Sensor types
 SENSOR_TYPE_TEMPERATURE: Final = "temperature"
@@ -57,6 +58,10 @@ MODEL_CODE_RAIN_SENSOR: Final = 87
 MODEL_CODE_AIR_SENSOR: Final = 262
 MODEL_CODE_2_ZONE_TIMER: Final = 261
 MODEL_CODE_DIIVOO_WT11W: Final = 271
+MODEL_CODE_HTV405FRF: Final = 38
+MODEL_CODE_AIR_SENSOR_V2: Final = 262
+MODEL_CODE_SOIL_MOISTURE_V2: Final = 317
+MODEL_CODE_DISPLAY_HUB_V2: Final = 289
 
 # Entity icons
 ICON_TEMPERATURE: Final = "mdi:thermometer"
@@ -69,6 +74,9 @@ ICON_ZONE_STATUS: Final = "mdi:information-outline"
 ICON_COUNTDOWN_TIMER: Final = "mdi:timer"
 ICON_DURATION_SETTING: Final = "mdi:timer-settings"
 ICON_IRRIGATION_ZONE: Final = "mdi:sprinkler"
+ICON_AIR_SENSOR: Final = "mdi:weather-cloudy"
+ICON_RAIN_SENSOR: Final = "mdi:weather-pouring"
+ICON_RAINFALL: Final = "mdi:weather-rainy"
 
 # Services
 SERVICE_START_IRRIGATION: Final = "start_irrigation"

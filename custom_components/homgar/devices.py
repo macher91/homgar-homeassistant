@@ -209,89 +209,120 @@ class RainPointDisplayHub(HomgarHubDevice):
 
 
 class RainPointSoilMoistureSensor(HomgarSubDevice):
-    MODEL_CODES = [72]
+    """Soil moisture and temperature sensor (HCS026FRF)."""
+    MODEL_CODES = [72, 317]
     FRIENDLY_DESC = "Soil Moisture Sensor"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.temp_mk_current = None
         self.moist_percent_current = None
-        self.light_lux_current = None
+        self.temp_mk_current = None
 
     def _parse_device_specific_status_d_value(self, s):
-        """
-        Observed example value:
-        766,52,G=31351
-
-        Deduced meaning:
-        temp[.1F],soil-moisture[%],G=light[.1lux]
-        """
-        temp_str, moist_str, light_str = s.split(',')
-        self.temp_mk_current = _temp_to_mk(temp_str)
-        self.moist_percent_current = int(moist_str)
-        self.light_lux_current = int(light_str[2:]) * .1
+        if not s: return
+        if "10#" in s:
+            hex_part = s.split('#')[1]
+            pos = hex_part.find('DC')
+            if pos >= 0 and pos + 8 <= len(hex_part):
+                self.moist_percent_current = int(hex_part[pos+6:pos+8], 16)
+                logger.debug("[DEBUG] [SENSOR UPDATE] %s: Moisture %d%%", self.name, self.moist_percent_current)
+            return
+        if ',' in s:
+            parts = s.split(',')
+            if len(parts) >= 2:
+                self.temp_mk_current = _temp_to_mk(parts[0])
+                self.moist_percent_current = int(parts[1])
 
     def __str__(self):
         s = super().__str__()
         if self.temp_mk_current:
-            s += f": {self.temp_mk_current*1e-3-273.15:.1f}°C / {self.moist_percent_current}% / {self.light_lux_current:.1f}lx"
+            s += f": {self.temp_mk_current*1e-3-273.15:.1f}°C / {self.moist_percent_current}%"
         return s
 
 
 class RainPointRainSensor(HomgarSubDevice):
+    """Outdoor Rain Sensor (HCS012ARF) with corrected offsets."""
     MODEL_CODES = [87]
     FRIENDLY_DESC = "High Precision Rain Sensor"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.rainfall_mm_total = None
-        self.rainfall_mm_hour = None
-        self.rainfall_mm_daily = None
-        self.rainfall_mm_total = None
+        self.rain_hour = 0.0
+        self.rain_24h = 0.0
+        self.rain_7d = 0.0
+        self.rain_total = 0.0
 
     def _parse_device_specific_status_d_value(self, s):
-        """
-        Observed example value:
-        R=270(0/0/270)
+        if "10#" in s:
+            hex_part = s.split('#')[1]
+            try:
+                # Little Endian Helper: Swaps bytes and divides by 10
+                def get_le_val(start):
+                    # We need 4 characters (2 bytes)
+                    flipped = hex_part[start+2:start+4] + hex_part[start:start+2]
+                    return int(flipped, 16) * 0.1
 
-        Deduced meaning:
-        R=total?[.1mm](hour?[.1mm]/24hours?[.1mm]/7days?[.1mm])
-        """
-        self.rainfall_mm_total, self.rainfall_mm_hour, self.rainfall_mm_daily, self.rainfall_mm_7days = [.1*v for v in _parse_stats_value(s[2:])]
+                self.rain_hour   = get_le_val(10)   # Hourly
+                self.rain_24h    = get_le_val(18)
+                self.rain_7d     = get_le_val(26)
+                self.rain_total  = get_le_val(36)
+                
+                logger.debug("[DEBUG] [RAIN] 1h:%.1f, 24h:%.1f, 7d:%.1f, Tot:%.1f", 
+                            self.rain_hour, self.rain_24h, self.rain_7d, self.rain_total)
+            except Exception as e:
+                logger.error("Rain Sensor parse error: %s", e)
 
     def __str__(self):
         s = super().__str__()
-        if self.rainfall_mm_total:
-            s += f": {self.rainfall_mm_total}mm total / {self.rainfall_mm_hour}mm 1h / {self.rainfall_mm_daily}mm 24h / {self.rainfall_mm_7days}mm 7days"
+        if self.rain_total:
+            s += f": {self.rain_total}mm total / {self.rain_hour}mm 1h / {self.rain_24h}mm 24h / {self.rain_7d}mm 7days"
         return s
 
 
 class RainPointAirSensor(HomgarSubDevice):
+    """Outdoor/Indoor Air Sensor (HCS014ARF) with Min/Max/Current decoding."""
     MODEL_CODES = [262]
     FRIENDLY_DESC = "Outdoor Air Humidity Sensor"
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.temp_mk_current = None
-        self.temp_mk_daily_max = None
-        self.temp_mk_daily_min = None
-        self.temp_trend = None
+        self.temp_mk_min = None
+        self.temp_mk_max = None
         self.hum_current = None
-        self.hum_daily_max = None
-        self.hum_daily_min = None
-        self.hum_trend = None
+        self.hum_min = None
+        self.hum_max = None
 
     def _parse_device_specific_status_d_value(self, s):
-        """
-        Observed example value:
-        755(1020/588/1),54(91/24/1),
+        if "10#" in s:
+            hex_part = s.split('#')[1]
+            try:
+                # Little Endian Helper for Temperature
+                def parse_t(start):
+                    flipped = hex_part[start+2:start+4] + hex_part[start:start+2]
+                    return _temp_to_mk(int(flipped, 16))
 
-        Deduced meaning:
-        temp[.1F](day-max/day-min/trend?),humidity[%](day-max/day-min/trend?)
-        """
-        temp_str, hum_str, *_ = s.split(',')
-        self.temp_mk_current, self.temp_mk_daily_max, self.temp_mk_daily_min, self.temp_trend = [_temp_to_mk(v) for v in _parse_stats_value(temp_str)]
-        self.hum_current, self.hum_daily_max, self.hum_daily_min, self.hum_trend = _parse_stats_value(hum_str)
+                self.temp_mk_min     = parse_t(2)
+                self.temp_mk_max     = parse_t(6)
+                self.temp_mk_current = parse_t(20)
+
+                pos_88 = hex_part.find('88')
+                if pos_88 >= 0:
+                    self.hum_current = int(hex_part[pos_88+2:pos_88+4], 16)
+                    self.hum_min     = int(hex_part[pos_88+6:pos_88+8], 16)
+                    self.hum_max     = int(hex_part[pos_88+8:pos_88+10], 16)
+                
+                logger.debug("[DEBUG] [AIR] %s: T(C:%s Min:%s Max:%s) H(C:%s Min:%s Max:%s)", 
+                            self.name, self.temp_mk_current, self.temp_mk_min, 
+                            self.temp_mk_max, self.hum_current, self.hum_min, self.hum_max)
+            except Exception as e:
+                logger.error("Air Sensor parse error: %s", e)
+        elif ',' in s:
+            parts = s.split(',')
+            if len(parts) >= 2:
+                temp_str, hum_str, *_ = parts
+                self.temp_mk_current, self.temp_mk_daily_max, self.temp_mk_daily_min, self.temp_trend = [_temp_to_mk(v) for v in _parse_stats_value(temp_str)]
+                self.hum_current, self.hum_daily_max, self.hum_daily_min, self.hum_trend = _parse_stats_value(hum_str)
 
     def __str__(self):
         s = super().__str__()
@@ -305,16 +336,46 @@ class RainPoint2ZoneTimer(HomgarSubDevice):
     FRIENDLY_DESC = "2-Zone Water Timer"
 
     def _parse_device_specific_status_d_value(self, s):
-        """
-        TODO deduce meaning of these fields.
-        Observed example value:
-        0,9,0,0,0,0|0,1291,0,0,0,0
-
-        What we know so far:
-        left/right zone separated by '|' character
-        fields for each zone: ?,last-usage[.1l],?,?,?,?
-        """
         pass
+
+
+class HTV405FRF(HomgarSubDevice):
+    """HTV405FRF 4-Zone Smart Water Timer."""
+    MODEL_CODES = [38]
+    FRIENDLY_DESC = "HTV405FRF 4-Zone Water Timer"
+
+    def __init__(self, hub_device_name=None, hub_product_key=None, **kwargs):
+        super().__init__(**kwargs)
+        self.zones = {i: {"active": False, "status": "off", "countdown_timer": 0, "duration_setting": 0} for i in [1, 2, 3, 4]}
+        self.hub_device_name = hub_device_name
+        self.hub_product_key = hub_product_key
+        self.hw_sequence = "000000"
+
+    def _parse_device_specific_status_d_value(self, s):
+        if not s or '#' not in s: return
+        hex_data = s.split('#')[1]
+        if len(hex_data) >= 8:
+            self.hw_sequence = hex_data[2:8]
+        
+        status_map = {'D841': 'on', 'D800': 'off_recent', 'D820': 'off_idle'}
+        p_patterns = ['19D8', '1AD8', '1BD8', '1CD8']
+        for i, pat in enumerate(p_patterns, 1):
+            pos = hex_data.find(pat)
+            if pos >= 0 and pos + 6 <= len(hex_data):
+                st_code = hex_data[pos+2:pos+6]
+                if st_code in status_map:
+                    self.zones[i]['active'] = (status_map[st_code] == 'on')
+                    self.zones[i]['status'] = status_map[st_code]
+
+    def is_zone_active(self, zone_number: int) -> bool:
+        return self.zones.get(zone_number, {}).get('active', False)
+
+    def get_zone_status_text(self, zone_number: int) -> str:
+        return self.zones.get(zone_number, {}).get('status', 'unknown')
+
+    def control_zone(self, api, zone_number: int, mode: int, duration: int = 0) -> bool:
+        return api.control_device_work_mode(self.hub_device_name, self.hub_product_key, str(self.mid), self.address, zone_number, mode, duration)
+
 
 
 class DiivooWT11W(HomgarSubDevice):
@@ -708,6 +769,8 @@ MODEL_CODE_MAPPING = {
         HWG0538WRF,
         HomgarWeatherHub,
         HomgarWeatherStation,
-        HomgarIndoorSensor
+        HomgarIndoorSensor,
+        HTV405FRF
     ) for code in clazz.MODEL_CODES
 }
+

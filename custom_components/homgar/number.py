@@ -13,9 +13,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
+
 
 from .const import DOMAIN, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
-from .devices import DiivooWT11W
+from .devices import DiivooWT11W, HTV405FRF
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the HomGar number platform."""
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = config_entry.runtime_data
     
     entities = []
     
@@ -35,6 +38,14 @@ async def async_setup_entry(
         if isinstance(device, DiivooWT11W):
             # Create a duration number entity for each zone
             for zone_number in [1, 2, 3]:
+                entities.append(
+                    HomgarZoneDurationNumber(
+                        coordinator, device, device_id, zone_number
+                    )
+                )
+        elif isinstance(device, HTV405FRF):
+            # Create a duration number entity for each of the 4 HTV405FRF zones
+            for zone_number in [1, 2, 3, 4]:
                 entities.append(
                     HomgarZoneDurationNumber(
                         coordinator, device, device_id, zone_number
@@ -66,14 +77,15 @@ class HomgarZoneDurationNumber(CoordinatorEntity, RestoreNumber):
         self._attr_native_unit_of_measurement = "min"
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device information."""
-        return {
-            "identifiers": {(DOMAIN, self.device.did)},
-            "name": self.device.name,
-            "manufacturer": "HomGar",
-            "model": self.device.model,
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.device.did)},
+            name=self.device.name,
+            manufacturer="HomGar",
+            model=self.device.model,
+        )
+
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
