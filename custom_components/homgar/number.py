@@ -16,6 +16,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 
 
+from .entity import HomgarEntity
+from .coordinator import HomgarDataUpdateCoordinator
 from .const import DOMAIN, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
 from .devices import DiivooWT11W, HTV405FRF
 
@@ -56,14 +58,12 @@ async def async_setup_entry(
         async_add_entities(entities)
 
 
-class HomgarZoneDurationNumber(CoordinatorEntity, RestoreNumber):
+class HomgarZoneDurationNumber(HomgarEntity, RestoreNumber):
     """Number entity for setting the target duration of a zone."""
 
     def __init__(self, coordinator, device, device_id, zone):
         """Initialize the number entity."""
-        super().__init__(coordinator)
-        self.device = device
-        self.device_id = device_id
+        super().__init__(coordinator, device_id, device)
         self.zone = zone
         self._attr_unique_id = f"homgar_duration_{device.did}_{zone}"
         self._attr_name = f"{device.name} Zone {zone} Target Duration"
@@ -75,16 +75,6 @@ class HomgarZoneDurationNumber(CoordinatorEntity, RestoreNumber):
         self._attr_mode = NumberMode.SLIDER
         self._attr_icon = "mdi:timer-outline"
         self._attr_native_unit_of_measurement = "min"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device information."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.device.did)},
-            name=self.device.name,
-            manufacturer="HomGar",
-            model=self.device.model,
-        )
 
 
     async def async_added_to_hass(self) -> None:

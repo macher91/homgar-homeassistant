@@ -24,7 +24,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import HomgarConfigEntry
+from .entity import HomgarEntity
+from .coordinator import HomgarDataUpdateCoordinator
 from .const import (
     DOMAIN,
     ICON_TEMPERATURE,
@@ -58,7 +59,7 @@ from .entity import HomgarEntity
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -178,15 +179,21 @@ SENSOR_DESCRIPTIONS = {
     "countdown_timer": SensorEntityDescription(
         key="countdown_timer",
         name="Countdown Timer",
-        device_class=SensorDeviceClass.DURATION,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.TIMESTAMP,
         icon=ICON_COUNTDOWN_TIMER,
     ),
     "duration_setting": SensorEntityDescription(
         key="duration_setting",
         name="Duration Setting",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
         icon=ICON_DURATION_SETTING,
+    ),
+    "last_sync": SensorEntityDescription(
+        key="last_sync",
+        name="Last Device Sync",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:sync",
     ),
 }
 
@@ -203,18 +210,22 @@ async def async_setup_entry(
 
     # Create sensors for each device
     for device_id, device in coordinator.devices.items():
+        _LOGGER.debug("[DEBUG] [SENSOR SETUP] Processing device: %s (ID:%s, Class:%s)", 
+                     getattr(device, 'name', 'unnamed'), device_id, device.__class__.__name__)
 
         if isinstance(device, RainPointDisplayHub):
             entities.extend([
                 HomgarTemperatureSensor(coordinator, device_id, device),
                 HomgarHumiditySensor(coordinator, device_id, device),
                 HomgarPressureSensor(coordinator, device_id, device),
+                HomgarLastSyncSensor(coordinator, device_id, device),
             ])
         elif isinstance(device, HomgarWeatherStation):
             entities.extend([
                 HomgarTemperatureSensor(coordinator, device_id, device),
                 HomgarHumiditySensor(coordinator, device_id, device),
                 HomgarPressureSensor(coordinator, device_id, device),
+                HomgarLastSyncSensor(coordinator, device_id, device),
             ])
         elif isinstance(device, RainPointSoilMoistureSensor):
             entities.extend([
@@ -244,26 +255,32 @@ async def async_setup_entry(
                 HomgarAirHumiditySensor(coordinator, device_id, device),
             ])
         elif isinstance(device, DiivooWT11W):
+            entities.append(HomgarLastSyncSensor(coordinator, device_id, device))
             for zone in [1, 2, 3]:
                 entities.extend([
                     HomgarZoneStatusSensor(coordinator, device_id, device, zone),
                     HomgarCountdownTimerSensor(coordinator, device_id, device, zone),
                     HomgarDurationSettingSensor(coordinator, device_id, device, zone),
                 ])
-        elif isinstance(device, HTV405FRF):
+        elif isinstance(device, HTV405FRF) or getattr(device, 'modelCode', 0) == 38:
+            _LOGGER.debug("[DEBUG] [SENSOR SETUP] Adding 4-zone sensors for HTV405FRF")
             for zone in [1, 2, 3, 4]:
                 entities.extend([
                     HomgarZoneStatusSensor(coordinator, device_id, device, zone),
+                    HomgarCountdownTimerSensor(coordinator, device_id, device, zone),
+                    HomgarDurationSettingSensor(coordinator, device_id, device, zone),
                 ])
+
+
 
 
     async_add_entities(entities)
 
 
-class HomgarSensor(CoordinatorEntity, SensorEntity):
+class HomgarSensor(HomgarEntity, SensorEntity):
     """Base class for HomGar sensors."""
 
-    _attr_force_update = True  # 🔥 C'EST ÇA LA CLÉ
+    _attr_force_update = True
 
     def __init__(
         self,
@@ -273,23 +290,14 @@ class HomgarSensor(CoordinatorEntity, SensorEntity):
         description: SensorEntityDescription,
         zone: int | None = None,
     ) -> None:
-        super().__init__(coordinator)
+        """Initialize the sensor."""
+        super().__init__(coordinator, device_id, device)
 
-        self.device_id = device_id
         self.entity_description = description
         self.zone = zone
-        self.device = device
-        
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device.did)},
-            name=device.name,
-            manufacturer="HomGar",
-            model=device.model,
-        )
 
         base_uid = f"homgar_{device.did}_{getattr(device, 'sid', device.address)}"
-
-
+        
         if zone is not None:
             self._attr_name = f"{device.name} Zone {zone} {description.name}"
             self._attr_unique_id = f"{base_uid}_zone_{zone}_{description.key}"
@@ -297,16 +305,6 @@ class HomgarSensor(CoordinatorEntity, SensorEntity):
             self._attr_name = f"{device.name} {description.name}"
             self._attr_unique_id = f"{base_uid}_{description.key}"
 
-    @property
-    def device(self) -> Any | None:
-        dev = self.coordinator.data.get(self.device_id)
-        _LOGGER.debug(
-            "HA DEVICE ACCESS %s -> %s temp=%s",
-            self.entity_id,
-            self.device_id,
-            getattr(dev, "temp_mk_current", None),
-        )
-        return dev
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -529,9 +527,12 @@ class HomgarCountdownTimerSensor(HomgarSensor):
         super().__init__(coordinator, device_id, device, SENSOR_DESCRIPTIONS["countdown_timer"], zone)
 
     @property
-    def native_value(self) -> int | None:
-        """Return the countdown timer value."""
-        return self.device.get_zone_countdown_timer(self.zone)
+    def native_value(self) -> datetime | None:
+        """Return the countdown timer end time."""
+        ts = self.device.get_zone_countdown_end_time(self.zone)
+        if ts:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        return None
 
 
 class HomgarDurationSettingSensor(HomgarSensor):
@@ -544,3 +545,22 @@ class HomgarDurationSettingSensor(HomgarSensor):
     def native_value(self) -> int | None:
         """Return the duration setting value."""
         return self.device.get_zone_duration_setting(self.zone)
+
+
+class HomgarLastSyncSensor(HomgarSensor):
+    """Representation of a HomGar Last Device Sync sensor."""
+
+    def __init__(self, coordinator, device_id, device):
+        super().__init__(
+            coordinator, 
+            device_id, 
+            device, 
+            SENSOR_DESCRIPTIONS["last_sync"]
+        )
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the last sync time as a datetime object."""
+        if hasattr(self.device, 'last_sync_time') and self.device.last_sync_time:
+            return datetime.fromtimestamp(self.device.last_sync_time, tz=timezone.utc)
+        return None

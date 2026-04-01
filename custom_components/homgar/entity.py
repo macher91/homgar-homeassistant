@@ -22,7 +22,7 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
         """Initialize the entity."""
         super().__init__(coordinator)
         self.device_id = device_id
-        self.device = device
+        self._device = device
         self._attr_device_info = DeviceInfo(
             identifiers={
                 (DOMAIN, device.did)
@@ -32,6 +32,14 @@ class HomgarEntity(CoordinatorEntity[HomgarDataUpdateCoordinator]):
             model=device.model,
             sw_version=getattr(device, "softVer", None),
         )
+
+    @property
+    def device(self) -> Any | None:
+        """Fetch the latest device data from coordinator."""
+        dev = self.coordinator.data.get(self.device_id)
+        if dev is None:
+            return self._device # Fallback to initial object if not in data
+        return dev
 
     @property
     def available(self) -> bool:
