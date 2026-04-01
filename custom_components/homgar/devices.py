@@ -1,8 +1,10 @@
 import re
 import logging
 from typing import List
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
 
 STATS_VALUE_REGEX = re.compile(r'^(\d+)\((\d+)/(\d+)/(\d+)\)')
 
@@ -53,6 +55,7 @@ class HomgarDevice:
         self.did = did  # the unique device identifier of this device itself
         self.mid = mid  # the unique identifier of the sensor network
         self.alerts = alerts
+        self.last_sync_time = None
 
         self.address = None
         self.rf_rssi = None
@@ -71,26 +74,34 @@ class HomgarDevice:
         """
         return []
 
-    def set_device_status(self, api_obj: dict) -> None:
+    def set_device_status(self, api_obj: dict, msg_time: float = None) -> None:
         """
-        Called after a call to /app/device/getDeviceStatus with an entry from $.data.subDeviceStatus
-        that matches one of the IDs returned by get_device_status_ids().
-        Should update the device status with the contents of the given API response.
-        :param api_obj: The $.data.subDeviceStatus API response that should be used to update this device's status
+        Update the device status from an API response (poll, MQTT, or command feedback).
         """
-        if api_obj['id'] == f"D{self.address:02d}":
-            self._parse_status_d_value(api_obj['value'])
+        attr_id = api_obj.get('id')
+        value = api_obj.get('value') or api_obj.get('state')
+        
+        if not value:
+            return
 
-    def _parse_status_d_value(self, val: str) -> None:
+        # Update last sync time whenever we get a valid value
+        self.last_sync_time = msg_time if msg_time else datetime.now().timestamp()
+
+        # Handle direct state response (no 'id' field) or matching 'id' field
+        if attr_id == f"D{self.address:02d}" or (not attr_id and value.startswith('11#')):
+            self._parse_status_d_value(value, msg_time=msg_time)
+
+    def _parse_status_d_value(self, val: str, msg_time: float = None) -> None:
         """
-        Parses a $.data.subDeviceStatus[x].value field for an entry with ID 'Dxx' where xx is the device address.
-        These fields consist of a common part and a device-specific part separated by a ';'.
-        This call should update the device status.
-        :param val: Value of the $.data.subDeviceStatus[x].value field to apply
+        Parses status value. Handles both 'general;specific' (poll/mqtt) and 'specific' (direct command response).
         """
-        general_str, specific_str = val.split(';')
-        self._parse_general_status_d_value(general_str)
-        self._parse_device_specific_status_d_value(specific_str)
+        if ';' in val:
+            general_str, specific_str = val.split(';')
+            self._parse_general_status_d_value(general_str)
+            self._parse_device_specific_status_d_value(specific_str, msg_time=msg_time)
+        elif val.startswith('11#'):
+            # Direct status response (just the hex part)
+            self._parse_device_specific_status_d_value(val, msg_time=msg_time)
 
     def _parse_general_status_d_value(self, s: str):
         """
@@ -103,7 +114,7 @@ class HomgarDevice:
         unknown_1, rf_rssi, unknown_2 = s.split(',')
         self.rf_rssi = int(rf_rssi)
 
-    def _parse_device_specific_status_d_value(self, s: str):
+    def _parse_device_specific_status_d_value(self, s: str, msg_time: float = None):
         """
         Parses the part of a $.data.subDeviceStatus[x].value field after the ';' character,
         which is in a device-specific format.
@@ -128,7 +139,7 @@ class HomgarHubDevice(HomgarDevice):
     def __str__(self):
         return f"{super().__str__()} with {len(self.subdevices)} subdevices"
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         pass
 
 
@@ -148,7 +159,7 @@ class HomgarSubDevice(HomgarDevice):
     def get_device_status_ids(self):
         return [f"D{self.address:02d}"]
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         pass
 
 
@@ -178,17 +189,21 @@ class RainPointDisplayHub(HomgarHubDevice):
     def get_device_status_ids(self):
         return ["connected", "state", "D01"]
 
-    def set_device_status(self, api_obj):
-        dev_id = api_obj['id']
-        val = api_obj['value']
-        if dev_id == "state":
-            self.battery_state, self.wifi_rssi = [int(s) for s in val.split(',')]
-        elif dev_id == "connected":
-            self.connected = int(val) == 1
+    def set_device_status(self, api_obj, msg_time=None):
+        attr_id = api_obj.get('id')
+        value = api_obj.get('value') or api_obj.get('state')
+ 
+        if attr_id == "state":
+            try:
+                self.battery_state, self.wifi_rssi = [int(s) for s in value.split(',')]
+            except Exception:
+                pass
+        elif attr_id == "connected":
+            self.connected = int(value) == 1
         else:
-            super().set_device_status(api_obj)
+            super().set_device_status(api_obj, msg_time=msg_time)
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         """
         Observed example value:
         781(781/723/1),52(64/50/1),P=10213(10222/10205/1),
@@ -218,7 +233,7 @@ class RainPointSoilMoistureSensor(HomgarSubDevice):
         self.moist_percent_current = None
         self.temp_mk_current = None
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         if not s: return
         if "10#" in s:
             hex_part = s.split('#')[1]
@@ -252,7 +267,7 @@ class RainPointRainSensor(HomgarSubDevice):
         self.rain_7d = 0.0
         self.rain_total = 0.0
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         if "10#" in s:
             hex_part = s.split('#')[1]
             try:
@@ -293,7 +308,7 @@ class RainPointAirSensor(HomgarSubDevice):
         self.hum_min = None
         self.hum_max = None
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         if "10#" in s:
             hex_part = s.split('#')[1]
             try:
@@ -335,7 +350,7 @@ class RainPoint2ZoneTimer(HomgarSubDevice):
     MODEL_CODES = [261]
     FRIENDLY_DESC = "2-Zone Water Timer"
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         pass
 
 
@@ -351,9 +366,16 @@ class HTV405FRF(HomgarSubDevice):
         self.hub_product_key = hub_product_key
         self.hw_sequence = "000000"
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         if not s or '#' not in s: return
         hex_data = s.split('#')[1]
+
+        # Update sync time if valid irrigation markers are found
+        # 19D8/1AD8/1BD8/1CD8 = Zone Status, 25AD/26AD/27AD/28AD = Zone Durations
+        sync_markers = ['19D8', '1AD8', '1BD8', '1CD8', '25AD', '26AD', '27AD', '28AD']
+        if any(marker in hex_data for marker in sync_markers) and msg_time:
+            self.last_sync_time = msg_time
+
         if len(hex_data) >= 8:
             self.hw_sequence = hex_data[2:8]
         
@@ -367,7 +389,62 @@ class HTV405FRF(HomgarSubDevice):
                     self.zones[i]['active'] = (status_map[st_code] == 'on')
                     self.zones[i]['status'] = status_map[st_code]
 
+        # Get current device ticks (master clock) from FEFF0F pattern
+        current_ticks = 0
+        pos_clk = hex_data.find('FEFF0F')
+        if pos_clk >= 0 and pos_clk + 14 <= len(hex_data):
+            clk_hex = hex_data[pos_clk+6:pos_clk+14]
+            try:
+                current_ticks = int.from_bytes(bytes.fromhex(clk_hex), "little")
+            except Exception:
+                pass
+
+        # Parse Countdown Timers (21B7, 22B7, 23B7, 24B7)
+        countdown_patterns = ['21B7', '22B7', '23B7', '24B7']
+        for i, pat in enumerate(countdown_patterns, 1):
+            pos = hex_data.find(pat)
+            if pos >= 0 and pos + 12 <= len(hex_data):
+                timer_hex = hex_data[pos+4:pos+12]
+                try:
+                    # Value is absolute end-time ticks
+                    end_ticks = int.from_bytes(bytes.fromhex(timer_hex), "little")
+                    if end_ticks > current_ticks > 0:
+                        self.zones[i]['countdown_timer'] = end_ticks - current_ticks
+                    else:
+                        self.zones[i]['countdown_timer'] = 0
+                        # Proactive auto-off: if timer is 0, zone must be off
+                        if self.zones[i]['active']:
+                            logger.debug("Zone %d timer expired, forcing active=False", i)
+                            self.zones[i]['active'] = False
+                            self.zones[i]['status'] = 'off_idle'
+                except Exception:
+                    self.zones[i]['countdown_timer'] = 0
+
+        # Parse Duration Settings (25AD, 26AD, 27AD, 28AD)
+        duration_patterns = ['25AD', '26AD', '27AD', '28AD']
+        for i, pat in enumerate(duration_patterns, 1):
+            pos = hex_data.find(pat)
+            if pos >= 0 and pos + 8 <= len(hex_data):
+                dur_hex = hex_data[pos+4:pos+8]
+                try:
+                    dur_val = int.from_bytes(bytes.fromhex(dur_hex), "little")
+                    self.zones[i]['duration_setting'] = dur_val
+                except Exception:
+                    self.zones[i]['duration_setting'] = 0
+
+    def get_zone_status(self, zone_number: int) -> dict | None:
+        return self.zones.get(zone_number)
+
+    def get_zone_countdown_timer(self, zone_number: int) -> int:
+        zone = self.get_zone_status(zone_number)
+        return zone['countdown_timer'] if zone else 0
+
+    def get_zone_duration_setting(self, zone_number: int) -> int:
+        zone = self.get_zone_status(zone_number)
+        return zone['duration_setting'] if zone else 0
+
     def is_zone_active(self, zone_number: int) -> bool:
+
         return self.zones.get(zone_number, {}).get('active', False)
 
     def get_zone_status_text(self, zone_number: int) -> str:
@@ -385,16 +462,16 @@ class DiivooWT11W(HomgarSubDevice):
     def __init__(self, hub_device_name=None, hub_product_key=None, **kwargs):
         super().__init__(**kwargs)
         self.zones = {
-            1: {"active": False, "status": "off_idle", "countdown_timer": 0, "duration_setting": 0},
-            2: {"active": False, "status": "off_idle", "countdown_timer": 0, "duration_setting": 0},
-            3: {"active": False, "status": "off_idle", "countdown_timer": 0, "duration_setting": 0}
+            1: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0},
+            2: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0},
+            3: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0}
         }
         self.connection_state = None
         self.device_state = None
         self.hub_device_name = hub_device_name
         self.hub_product_key = hub_product_key
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         """
         Parses the device-specific status for Diivoo WT-11W.
         
@@ -433,32 +510,38 @@ class DiivooWT11W(HomgarSubDevice):
         
         # Parse the hex data according to the documented format
         try:
-            self._parse_hex_status_data(hex_data)
+            self._parse_hex_status_data(hex_data, msg_time=msg_time)
         except Exception as e:
             logger.error("Error parsing hex data: %s", e)
             # If parsing fails, store raw data for debugging
             self.parse_error = str(e)
     
-    def _parse_hex_status_data(self, hex_data):
+    def _parse_hex_status_data(self, hex_data, msg_time=None):
         """
         Parse the hex-encoded status data into structured information.
-        Based on the documented format:
-        - 17 E19F00 - sequence (index 0-6)
-        - 19 D821 - port 1 status (index 6-10) 
-        - 1A D800 - port 2 status (index 10-14)
-        - 1B D800 - port 3 status (index 14-18)
-        - ... timers and duration settings follow
         """
-        if len(hex_data) < 50:  # Minimum length for basic parsing
+        if len(hex_data) < 50:
             return
             
+        # Note: last_sync_time is now handled in the base class set_device_status
+
         # Parse sequence (first 6 characters after the initial bytes)
         if len(hex_data) >= 8:
             self.sequence = hex_data[2:8]
         
-        # Parse port statuses by looking for the specific byte patterns
+        # Get current device ticks (master clock) from FEFF0F pattern
+        current_ticks = 0
+        pos_clk = hex_data.find('FEFF0F')
+        if pos_clk >= 0 and pos_clk + 14 <= len(hex_data):
+            clk_hex = hex_data[pos_clk+6:pos_clk+14]
+            try:
+                current_ticks = int.from_bytes(bytes.fromhex(clk_hex), "little")
+            except Exception:
+                pass
+
+        # Parse port statuses
         self._parse_port_statuses_precise(hex_data)
-        self._parse_countdown_timers_precise(hex_data)
+        self._parse_countdown_timers_precise(hex_data, current_ticks)
         self._parse_duration_settings_precise(hex_data)
     
     def _parse_port_statuses_precise(self, hex_data):
@@ -491,7 +574,7 @@ class DiivooWT11W(HomgarSubDevice):
                 else:
                     logger.warning("Port %d unknown status hex: %s", port_num, status_hex)
     
-    def _parse_countdown_timers_precise(self, hex_data):
+    def _parse_countdown_timers_precise(self, hex_data, current_ticks, msg_time=None):
         """
         Parse countdown timers for each port.
         Looking for patterns like:
@@ -510,10 +593,35 @@ class DiivooWT11W(HomgarSubDevice):
                     timer_value_hex = timer_hex[4:]
                     try:
                         timer_bytes = bytes.fromhex(timer_value_hex)
-                        timer_value = int.from_bytes(timer_bytes, "little")
+                        # Value is absolute end-time ticks
+                        end_ticks = int.from_bytes(timer_bytes, "little")
                         
-                        self.zones[port_num]['countdown_timer'] = timer_value
-                        logger.debug("Port %d timer updated: %d seconds", port_num, timer_value)
+                        if end_ticks > current_ticks > 0:
+                            # Ticks for Diivoo WT-11W are 1:1 with seconds
+                            rem_s = end_ticks - current_ticks
+                        else:
+                            rem_s = 0
+                            # Proactive auto-off: if timer is 0, zone must be off
+                            if self.zones[port_num]['active']:
+                                logger.debug("Port %d timer expired, forcing active=False", port_num)
+                                self.zones[port_num]['active'] = False
+                                self.zones[port_num]['status'] = 'off_idle'
+                            
+                        self.zones[port_num]['countdown_timer'] = rem_s
+                        if rem_s > 0:
+                            # Use msg_time if available, otherwise current local time
+                            base_time = msg_time if msg_time else datetime.now().timestamp()
+                            new_end_time = base_time + rem_s
+                            
+                            # Stabilize end_time: only update if it shifts by more than 10s
+                            # This prevents the UI timer from "jumping" due to MQTT latency
+                            old_end_time = self.zones[port_num].get('countdown_end_time')
+                            if not old_end_time or abs(new_end_time - old_end_time) > 10:
+                                self.zones[port_num]['countdown_end_time'] = new_end_time
+                        else:
+                            self.zones[port_num]['countdown_end_time'] = None
+
+                        logger.debug("Port %d timer updated: %d seconds", port_num, rem_s)
                     except ValueError as e:
                         logger.debug("Port %d timer conversion error: %s", port_num, e)
                         self.zones[port_num]['countdown_timer'] = 0
@@ -545,23 +653,22 @@ class DiivooWT11W(HomgarSubDevice):
                         logger.debug("Port %d duration conversion error: %s", port_num, e)
                         self.zones[port_num]['duration_setting'] = 0
 
-    def set_device_status(self, api_obj: dict) -> None:
+    def set_device_status(self, api_obj: dict, msg_time: float = None) -> None:
         """
         Override to handle additional status fields specific to the timer.
         """
-        logger.debug("=== DIIVOO DEVICE STATUS UPDATE ===")
-        dev_id = api_obj['id']
-        val = api_obj['value']
+        attr_id = api_obj.get('id')
+        value = api_obj.get('value') or api_obj.get('state')
         
-        if dev_id == 'connected':
-            self.connection_state = int(val) == 1
-        elif dev_id == 'state':
-            self.device_state = val
-        elif dev_id == f"D{self.address:02d}":
-            self._parse_device_specific_status_d_value(val)
-        else:
-            if hasattr(self, 'rf_rssi'):
-                pass
+        if not value: return
+
+        if attr_id == 'connected':
+            self.connection_state = int(value) == 1
+        elif attr_id == 'state':
+            self.device_state = value
+        
+        # Always allow base class to try parsing it (handles Dxx patterns)
+        super().set_device_status(api_obj, msg_time=msg_time)
 
     def get_device_status_ids(self):
         """
@@ -589,6 +696,15 @@ class DiivooWT11W(HomgarSubDevice):
         """
         zone = self.get_zone_status(zone_number)
         return zone['countdown_timer'] if zone else 0
+
+    def get_zone_countdown_end_time(self, zone_number):
+        """
+        Get the absolute end time for a zone as a timestamp.
+        """
+        zone = self.get_zone_status(zone_number)
+        if zone and zone.get('active') and zone.get('countdown_end_time'):
+            return zone['countdown_end_time']
+        return None
     
     def get_zone_duration_setting(self, zone_number):
         """
@@ -687,12 +803,9 @@ class HWG0538WRF(HomgarHubDevice):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def _parse_device_specific_status_d_value(self, s):
-        """
-        Parses the device-specific status for HWG0538WRF hub device.
-        Hub devices typically don't parse device-specific status.
-        """
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         pass
+
 
 class HomgarWeatherHub(HomgarHubDevice):
     MODEL_CODES = [257]
@@ -706,7 +819,9 @@ class HomgarWeatherHub(HomgarHubDevice):
 
     def get_device_status_ids(self):
         return ["connected", "state"]
-    # ❗ PAS de parsing ici
+
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
+        pass
     
 
 class HomgarWeatherStation(HomgarSubDevice):
@@ -716,7 +831,7 @@ class HomgarWeatherStation(HomgarSubDevice):
     def get_device_status_ids(self):
         return ["connected", "state", "D01"]
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         logger.debug("RAW D01 FROM HUB = %s", s)
 
         try:
@@ -748,7 +863,7 @@ class HomgarIndoorSensor(HomgarSubDevice):
         self.temp_mk_current = None
         self.hum_current = None
 
-    def _parse_device_specific_status_d_value(self, s):
+    def _parse_device_specific_status_d_value(self, s, msg_time=None):
         temp_str, hum_str, *_ = s.split(',')
 
         t, *_ = _parse_stats_value(temp_str)
@@ -756,6 +871,7 @@ class HomgarIndoorSensor(HomgarSubDevice):
 
         h, *_ = _parse_stats_value(hum_str)
         self.hum_current = _safe_int(h)
+
 
 MODEL_CODE_MAPPING = {
     code: clazz
@@ -773,4 +889,3 @@ MODEL_CODE_MAPPING = {
         HTV405FRF
     ) for code in clazz.MODEL_CODES
 }
-

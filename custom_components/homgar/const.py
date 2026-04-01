@@ -13,7 +13,7 @@ CONF_DURATION: Final = "duration"
 
 # Default values
 DEFAULT_AREA_CODE: Final = "33"
-DEFAULT_UPDATE_INTERVAL: Final = 60  # seconds
+DEFAULT_UPDATE_INTERVAL: Final = 3600  # 1 hour (relying on MQTT for real-time updates)
 
 # API
 API_BASE_URL: Final = "https://region3.homgarus.com"

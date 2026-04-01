@@ -40,7 +40,7 @@
       "fields": {
         "device_id": {
           "name": "Device ID",
-          "description": "The device ID (e.g., 'hub_143591' or 'device_143591_1')"
+          "description": "The device ID (e.g., 'hub_654321' or 'device_654321_1')"
         },
         "zone": {
           "name": "Zone",
@@ -58,7 +58,7 @@
       "fields": {
         "device_id": {
           "name": "Device ID",
-          "description": "The device ID (e.g., 'hub_143591' or 'device_143591_1')"
+          "description": "The device ID (e.g., 'hub_654321' or 'device_654321_1')"
         },
         "zone": {
           "name": "Zone",
