@@ -748,6 +748,18 @@ class DiivooWT09W(DiivooWTBase):
     TICK_CORRECTION_FACTOR = 1.0
 
 
+class DiivooWT07W(DiivooWTBase):
+    """Diivoo WT-07W 1-Zone Water Timer (HTV0535FR, modelCode 269)."""
+    MODEL_CODES = [269]
+    FRIENDLY_DESC = "Diivoo WT-07W 1-Zone Water Timer"
+
+    ZONE_NUMBERS = [1]
+    PORT_STATUS_PATTERNS = ['19D8']
+    TIMER_PATTERNS = ['21B7']
+    DURATION_PATTERNS = ['25AD']
+    TICK_CORRECTION_FACTOR = 1.0
+
+
 class HWG0538WRF(HomgarHubDevice):
     MODEL_CODES = [256]
     FRIENDLY_DESC = "HWG0538WRF Water Timer Hub"
@@ -835,6 +847,7 @@ MODEL_CODE_MAPPING = {
         RainPoint2ZoneTimer,
         DiivooWT11W,
         DiivooWT09W,
+        DiivooWT07W,
         HWG0538WRF,
         HomgarWeatherHub,
         HomgarWeatherStation,
