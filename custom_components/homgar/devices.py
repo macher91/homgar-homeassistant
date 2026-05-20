@@ -737,8 +737,8 @@ class DiivooWT11W(DiivooWTBase):
 
 
 class DiivooWT13W(DiivooWTBase):
-    """Diivoo WT-13W 4-Zone Water Timer (modelCode 271)."""
-    MODEL_CODES = [271]
+    """Diivoo WT-13W 4-Zone Water Timer (modelCode 272)."""
+    MODEL_CODES = [272]
     FRIENDLY_DESC = "Diivoo WT-13W 4-Zone Water Timer"
 
     ZONE_NUMBERS = [1, 2, 3, 4]
