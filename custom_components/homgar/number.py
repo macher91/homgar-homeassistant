@@ -19,7 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .entity import HomgarEntity
 from .coordinator import HomgarDataUpdateCoordinator
 from .const import DOMAIN, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
-from .devices import DiivooWT11W, HTV405FRF
+from .devices import DiivooWTBase, HTV405FRF
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,9 +37,8 @@ async def async_setup_entry(
     
     # Check all devices for multi-zone water timers that need duration sliders
     for device_id, device in coordinator.devices.items():
-        if isinstance(device, DiivooWT11W):
-            # Create a duration number entity for each zone
-            for zone_number in [1, 2, 3]:
+        if isinstance(device, DiivooWTBase):
+            for zone_number in device.ZONE_NUMBERS:
                 entities.append(
                     HomgarZoneDurationNumber(
                         coordinator, device, device_id, zone_number

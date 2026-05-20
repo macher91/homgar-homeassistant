@@ -455,80 +455,74 @@ class HTV405FRF(HomgarSubDevice):
 
 
 
-class DiivooWT11W(HomgarSubDevice):
-    MODEL_CODES = [271]
-    FRIENDLY_DESC = "Diivoo WT-11W 3-Zone Water Timer"
+class DiivooWTBase(HomgarSubDevice):
+    """
+    Base class for Diivoo WT-series Water Timers.
+
+    Subclasses configure the device by setting class-level attributes:
+    - ZONE_NUMBERS: list of zone numbers (e.g. [1, 2] or [1, 2, 3])
+    - PORT_STATUS_PATTERNS: hex patterns for zone on/off status
+    - TIMER_PATTERNS: hex patterns for countdown timer end-ticks
+    - DURATION_PATTERNS: hex patterns for duration settings
+    - TICK_CORRECTION_FACTOR: divisor for converting device ticks to seconds (1.0 = no correction)
+    """
+
+    # --- Subclass configuration (override in subclasses) ---
+    ZONE_NUMBERS: list = []
+    PORT_STATUS_PATTERNS: list = []
+    TIMER_PATTERNS: list = []
+    DURATION_PATTERNS: list = []
+    TICK_CORRECTION_FACTOR: float = 1.0
 
     def __init__(self, hub_device_name=None, hub_product_key=None, **kwargs):
         super().__init__(**kwargs)
         self.zones = {
-            1: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0},
-            2: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0},
-            3: {"active": False, "status": "off_idle", "countdown_timer": 0, "countdown_end_time": None, "duration_setting": 0}
+            z: {"active": False, "status": "off_idle", "countdown_timer": 0,
+                "countdown_end_time": None, "duration_setting": 0}
+            for z in self.ZONE_NUMBERS
         }
         self.connection_state = None
         self.device_state = None
         self.hub_device_name = hub_device_name
         self.hub_product_key = hub_product_key
 
+    # --- Hex status parsing ---
+
     def _parse_device_specific_status_d_value(self, s, msg_time=None):
         """
-        Parses the device-specific status for Diivoo WT-11W.
-        
-        Status format: 11#[hex_data]
-        
-        Hex data structure:
-        - 17 E19F00 - sequence
-        - 19 D821 - port 1 status (D821=On, D820=Off Recent, D800=Off Idle)
-        - 1A D800 - port 2 status 
-        - 1B D800 - port 3 status
-        - 1D 201E - unknown
-        - 20 1F20 - unknown 
-        - 18 DC01 - unknown
-        - 21 B79AE7DE15 - Port 1: Countdown Timer
-        - 22 B700000000 - Port 2: Countdown Timer
-        - 23 B700000000 - Port 3: Countdown Timer
-        - 25 ADDC05 - Port 1: Duration Setting
-        - 26 AD0000 - Port 2: Duration Setting
-        - 27 AD0000 - Port 3: Duration Setting
+        Parses the device-specific hex status (format: 11#[hex_data]).
         """
         logger.debug("--- PARSING DIIVOO HEX STATUS ---")
-        
+
         self.raw_status = s
-        
+
         if '#' not in s:
             return
-            
+
         parts = s.split('#')
         if len(parts) < 2:
             return
-            
+
         hex_data = parts[1]
         self.hex_status_data = hex_data
-        
+
         logger.debug("Hex data: %s", hex_data)
-        
-        # Parse the hex data according to the documented format
+
         try:
             self._parse_hex_status_data(hex_data, msg_time=msg_time)
         except Exception as e:
             logger.error("Error parsing hex data: %s", e)
-            # If parsing fails, store raw data for debugging
             self.parse_error = str(e)
-    
+
     def _parse_hex_status_data(self, hex_data, msg_time=None):
-        """
-        Parse the hex-encoded status data into structured information.
-        """
+        """Parse the hex-encoded status data into structured information."""
         if len(hex_data) < 50:
             return
-            
-        # Note: last_sync_time is now handled in the base class set_device_status
 
         # Parse sequence (first 6 characters after the initial bytes)
         if len(hex_data) >= 8:
             self.sequence = hex_data[2:8]
-        
+
         # Get current device ticks (master clock) from FEFF0F pattern
         current_ticks = 0
         pos_clk = hex_data.find('FEFF0F')
@@ -539,195 +533,141 @@ class DiivooWT11W(HomgarSubDevice):
             except Exception:
                 pass
 
-        # Parse port statuses
         self._parse_port_statuses_precise(hex_data)
-        self._parse_countdown_timers_precise(hex_data, current_ticks)
+        self._parse_countdown_timers_precise(hex_data, current_ticks, msg_time=msg_time)
         self._parse_duration_settings_precise(hex_data)
-    
+
     def _parse_port_statuses_precise(self, hex_data):
-        """
-        Parse port statuses using the documented byte positions.
-        Looking for patterns like:
-        - 19D821 - port 1 status (on)
-        - 1AD820 - port 2 status (off_recent)
-        - 1BD800 - port 3 status (off_idle)
-        """
+        """Parse port on/off statuses from hex patterns."""
         status_map = {
             'D821': 'on',
             'D820': 'off_recent',
             'D800': 'off_idle'
         }
-        
-        port_patterns = ['19D8', '1AD8', '1BD8']  # Port 1, 2, 3 patterns
-        
-        for port_num, pattern in enumerate(port_patterns, 1):
+
+        for port_num, pattern in enumerate(self.PORT_STATUS_PATTERNS, 1):
             pattern_pos = hex_data.find(pattern)
-            
+
             if pattern_pos >= 0 and pattern_pos + 6 <= len(hex_data):
-                full_pattern = hex_data[pattern_pos:pattern_pos + 6]
-                status_hex = full_pattern[2:]
-                
+                status_hex = hex_data[pattern_pos + 2:pattern_pos + 6]
+
                 if status_hex in status_map:
                     self.zones[port_num]['active'] = status_map[status_hex] == 'on'
                     self.zones[port_num]['status'] = status_map[status_hex]
-                    logger.debug("Port %d status updated: %s", port_num, status_map[status_hex])
+                    logger.debug("Zone %d status: %s", port_num, status_map[status_hex])
                 else:
-                    logger.warning("Port %d unknown status hex: %s", port_num, status_hex)
-    
-    def _parse_countdown_timers_precise(self, hex_data, current_ticks, msg_time=None):
-        """
-        Parse countdown timers for each port.
-        Looking for patterns like:
-        - 21B79AE7DE15 - Port 1 countdown timer
-        - 22B700000000 - Port 2 countdown timer
-        - 23B700000000 - Port 3 countdown timer
-        """
-        timer_patterns = ['21B7', '22B7', '23B7']
-        
-        for port_num, pattern in enumerate(timer_patterns, 1):
-            pattern_pos = hex_data.find(pattern)
-            
-            if pattern_pos >= 0 and pattern_pos + 12 <= len(hex_data):
-                timer_hex = hex_data[pattern_pos:pattern_pos + 12]
-                if timer_hex.startswith(pattern):
-                    timer_value_hex = timer_hex[4:]
-                    try:
-                        timer_bytes = bytes.fromhex(timer_value_hex)
-                        # Value is absolute end-time ticks
-                        end_ticks = int.from_bytes(timer_bytes, "little")
-                        
-                        if end_ticks > current_ticks > 0:
-                            # Ticks for Diivoo WT-11W are 1:1 with seconds
-                            rem_s = end_ticks - current_ticks
-                        else:
-                            rem_s = 0
-                            # Proactive auto-off: if timer is 0, zone must be off
-                            if self.zones[port_num]['active']:
-                                logger.debug("Port %d timer expired, forcing active=False", port_num)
-                                self.zones[port_num]['active'] = False
-                                self.zones[port_num]['status'] = 'off_idle'
-                            
-                        self.zones[port_num]['countdown_timer'] = rem_s
-                        if rem_s > 0:
-                            # Use msg_time if available, otherwise current local time
-                            base_time = msg_time if msg_time else datetime.now().timestamp()
-                            new_end_time = base_time + rem_s
-                            
-                            # Stabilize end_time: only update if it shifts by more than 10s
-                            # This prevents the UI timer from "jumping" due to MQTT latency
-                            old_end_time = self.zones[port_num].get('countdown_end_time')
-                            if not old_end_time or abs(new_end_time - old_end_time) > 10:
-                                self.zones[port_num]['countdown_end_time'] = new_end_time
-                        else:
-                            self.zones[port_num]['countdown_end_time'] = None
+                    logger.warning("Zone %d unknown status hex: %s", port_num, status_hex)
 
-                        logger.debug("Port %d timer updated: %d seconds", port_num, rem_s)
-                    except ValueError as e:
-                        logger.debug("Port %d timer conversion error: %s", port_num, e)
-                        self.zones[port_num]['countdown_timer'] = 0
-    
-    def _parse_duration_settings_precise(self, hex_data):
-        """
-        Parse duration settings for each port.
-        Looking for patterns like:
-        - 25ADDC05 - Port 1 duration setting
-        - 26AD0000 - Port 2 duration setting
-        - 27AD0000 - Port 3 duration setting
-        """
-        duration_patterns = ['25AD', '26AD', '27AD']
-        
-        for port_num, pattern in enumerate(duration_patterns, 1):
+    def _parse_countdown_timers_precise(self, hex_data, current_ticks, msg_time=None):
+        """Parse countdown timer end-ticks from hex patterns."""
+        for port_num, pattern in enumerate(self.TIMER_PATTERNS, 1):
             pattern_pos = hex_data.find(pattern)
-            
+
+            if pattern_pos >= 0 and pattern_pos + 12 <= len(hex_data):
+                timer_value_hex = hex_data[pattern_pos + 4:pattern_pos + 12]
+                try:
+                    end_ticks = int.from_bytes(bytes.fromhex(timer_value_hex), "little")
+
+                    if end_ticks > current_ticks > 0:
+                        rem_s = round((end_ticks - current_ticks) / self.TICK_CORRECTION_FACTOR)
+                    else:
+                        rem_s = 0
+                        if self.zones[port_num]['active']:
+                            logger.debug("Zone %d timer expired, forcing active=False", port_num)
+                            self.zones[port_num]['active'] = False
+                            self.zones[port_num]['status'] = 'off_idle'
+
+                    self.zones[port_num]['countdown_timer'] = rem_s
+                    if rem_s > 0:
+                        base_time = msg_time if msg_time else datetime.now().timestamp()
+                        new_end_time = base_time + rem_s
+
+                        # Latching: only update end_time if the raw target ticks (B7) changed.
+                        old_b7 = self.zones[port_num].get('last_b7_ticks')
+                        if end_ticks != old_b7:
+                            self.zones[port_num]['countdown_end_time'] = new_end_time
+                            self.zones[port_num]['last_b7_ticks'] = end_ticks
+                    else:
+                        self.zones[port_num]['countdown_end_time'] = None
+                        self.zones[port_num]['last_b7_ticks'] = 0
+
+                    logger.debug("Zone %d timer: %d seconds", port_num, rem_s)
+                except ValueError as e:
+                    logger.debug("Zone %d timer error: %s", port_num, e)
+                    self.zones[port_num]['countdown_timer'] = 0
+
+    def _parse_duration_settings_precise(self, hex_data):
+        """Parse duration settings from hex patterns."""
+        for port_num, pattern in enumerate(self.DURATION_PATTERNS, 1):
+            pattern_pos = hex_data.find(pattern)
+
             if pattern_pos >= 0 and pattern_pos + 8 <= len(hex_data):
-                duration_hex = hex_data[pattern_pos:pattern_pos + 8]
-                if duration_hex.startswith(pattern):
-                    duration_value_hex = duration_hex[4:]
-                    try:
-                        duration_bytes = bytes.fromhex(duration_value_hex)
-                        duration_value = int.from_bytes(duration_bytes, "little")
-                        
-                        self.zones[port_num]['duration_setting'] = duration_value
-                        logger.debug("Port %d duration updated: %d", port_num, duration_value)
-                    except ValueError as e:
-                        logger.debug("Port %d duration conversion error: %s", port_num, e)
-                        self.zones[port_num]['duration_setting'] = 0
+                duration_value_hex = hex_data[pattern_pos + 4:pattern_pos + 8]
+                try:
+                    self.zones[port_num]['duration_setting'] = int.from_bytes(
+                        bytes.fromhex(duration_value_hex), "little")
+                    logger.debug("Zone %d duration: %d", port_num, self.zones[port_num]['duration_setting'])
+                except ValueError as e:
+                    logger.debug("Zone %d duration error: %s", port_num, e)
+                    self.zones[port_num]['duration_setting'] = 0
+
+    # --- Device status handling ---
 
     def set_device_status(self, api_obj: dict, msg_time: float = None) -> None:
-        """
-        Override to handle additional status fields specific to the timer.
-        """
+        """Override to handle additional status fields specific to the timer."""
         attr_id = api_obj.get('id')
         value = api_obj.get('value') or api_obj.get('state')
-        
+
         if not value: return
 
         if attr_id == 'connected':
             self.connection_state = int(value) == 1
         elif attr_id == 'state':
             self.device_state = value
-        
-        # Always allow base class to try parsing it (handles Dxx patterns)
+
         super().set_device_status(api_obj, msg_time=msg_time)
 
     def get_device_status_ids(self):
-        """
-        Return all status IDs this device listens to.
-        """
+        """Return all status IDs this device listens to."""
         return [f"D{self.address:02d}", "connected", "state"]
 
+    # --- Zone accessors ---
+
     def is_connected(self):
-        """
-        Check if device is connected.
-        """
+        """Check if device is connected."""
         return self.connection_state is True
 
     def get_zone_status(self, zone_number):
-        """
-        Get status for a specific zone (1-3).
-        """
-        if zone_number in self.zones:
-            return self.zones[zone_number]
-        return None
-    
+        """Get status dict for a specific zone."""
+        return self.zones.get(zone_number)
+
     def get_zone_countdown_timer(self, zone_number):
-        """
-        Get countdown timer for a specific zone in seconds.
-        """
+        """Get countdown timer for a specific zone in seconds."""
         zone = self.get_zone_status(zone_number)
         return zone['countdown_timer'] if zone else 0
 
     def get_zone_countdown_end_time(self, zone_number):
-        """
-        Get the absolute end time for a zone as a timestamp.
-        """
+        """Get the absolute end time for a zone as a timestamp."""
         zone = self.get_zone_status(zone_number)
         if zone and zone.get('active') and zone.get('countdown_end_time'):
             return zone['countdown_end_time']
         return None
-    
+
     def get_zone_duration_setting(self, zone_number):
-        """
-        Get duration setting for a specific zone.
-        """
+        """Get duration setting for a specific zone."""
         zone = self.get_zone_status(zone_number)
         return zone['duration_setting'] if zone else 0
-    
+
     def is_zone_active(self, zone_number):
-        """
-        Check if a specific zone is currently active (on).
-        """
+        """Check if a specific zone is currently active (on)."""
         zone = self.get_zone_status(zone_number)
         return zone['active'] if zone else False
-    
+
     def get_zone_status_text(self, zone_number):
-        """
-        Get human-readable status text for a specific zone.
-        """
+        """Get human-readable status text for a specific zone."""
         zone = self.get_zone_status(zone_number)
         if not zone:
             return "Unknown"
-        
         status_map = {
             'on': 'On',
             'off_recent': 'Off (Recent)',
@@ -735,22 +675,24 @@ class DiivooWT11W(HomgarSubDevice):
         }
         return status_map.get(zone['status'], zone['status'])
 
+    # --- Zone control ---
+
     def control_zone(self, api, zone_number, mode, duration=0):
         """
         Control a specific zone on the device.
-        
+
         :param api: HomgarApi instance
-        :param zone_number: Zone number (1-3)
+        :param zone_number: Zone number
         :param mode: 0 = OFF, 1 = ON
         :param duration: Duration in seconds (0 for indefinite)
         :return: API response
         """
-        if zone_number not in [1, 2, 3]:
-            raise ValueError("Zone number must be 1, 2, or 3")
-        
+        if zone_number not in self.ZONE_NUMBERS:
+            raise ValueError(f"Zone number must be one of {self.ZONE_NUMBERS}")
+
         if not self.hub_device_name or not self.hub_product_key:
             raise ValueError("Hub device name and product key are required for control operations")
-        
+
         return api.control_device_work_mode(
             device_name=self.hub_device_name,
             product_key=self.hub_product_key,
@@ -762,24 +704,11 @@ class DiivooWT11W(HomgarSubDevice):
         )
 
     def turn_on_zone(self, api, zone_number, duration=0):
-        """
-        Turn on a specific zone.
-        
-        :param api: HomgarApi instance
-        :param zone_number: Zone number (1-3)
-        :param duration: Duration in seconds (0 for indefinite)
-        :return: API response
-        """
+        """Turn on a specific zone."""
         return self.control_zone(api, zone_number, 1, duration)
 
     def turn_off_zone(self, api, zone_number):
-        """
-        Turn off a specific zone.
-        
-        :param api: HomgarApi instance
-        :param zone_number: Zone number (1-3)
-        :return: API response
-        """
+        """Turn off a specific zone."""
         return self.control_zone(api, zone_number, 0, 0)
 
     def __str__(self):
@@ -787,13 +716,36 @@ class DiivooWT11W(HomgarSubDevice):
         if self.connection_state is not None:
             status = "connected" if self.connection_state else "disconnected"
             s += f" ({status})"
-        
-        # Add zone status information
-        active_zones = [str(zone) for zone in [1, 2, 3] if self.is_zone_active(zone)]
+
+        active_zones = [str(z) for z in self.ZONE_NUMBERS if self.is_zone_active(z)]
         if active_zones:
             s += f" [Active zones: {', '.join(active_zones)}]"
-        
+
         return s
+
+
+class DiivooWT11W(DiivooWTBase):
+    """Diivoo WT-11W 3-Zone Water Timer (modelCode 271)."""
+    MODEL_CODES = [271]
+    FRIENDLY_DESC = "Diivoo WT-11W 3-Zone Water Timer"
+
+    ZONE_NUMBERS = [1, 2, 3]
+    PORT_STATUS_PATTERNS = ['19D8', '1AD8', '1BD8']
+    TIMER_PATTERNS = ['21B7', '22B7', '23B7']
+    DURATION_PATTERNS = ['25AD', '26AD', '27AD']
+    TICK_CORRECTION_FACTOR = 1.15
+
+
+class DiivooWT09W(DiivooWTBase):
+    """Diivoo WT-09W 2-Zone Water Timer (HTV0537FRF, modelCode 270)."""
+    MODEL_CODES = [270]
+    FRIENDLY_DESC = "Diivoo WT-09W 2-Zone Water Timer"
+
+    ZONE_NUMBERS = [1, 2]
+    PORT_STATUS_PATTERNS = ['19D8', '1AD8']
+    TIMER_PATTERNS = ['21B7', '22B7']
+    DURATION_PATTERNS = ['25AD', '26AD']
+    TICK_CORRECTION_FACTOR = 1.0
 
 
 class HWG0538WRF(HomgarHubDevice):
@@ -882,6 +834,7 @@ MODEL_CODE_MAPPING = {
         RainPointAirSensor,
         RainPoint2ZoneTimer,
         DiivooWT11W,
+        DiivooWT09W,
         HWG0538WRF,
         HomgarWeatherHub,
         HomgarWeatherStation,

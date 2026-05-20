@@ -47,7 +47,7 @@ from .devices import (
     RainPointSoilMoistureSensor,
     RainPointRainSensor,
     RainPointAirSensor,
-    DiivooWT11W,
+    DiivooWTBase,
     HWG0538WRF,
     HomgarWeatherHub,
     HomgarWeatherStation,
@@ -254,9 +254,9 @@ async def async_setup_entry(
                 HomgarAirTemperatureSensor(coordinator, device_id, device),
                 HomgarAirHumiditySensor(coordinator, device_id, device),
             ])
-        elif isinstance(device, DiivooWT11W):
+        elif isinstance(device, DiivooWTBase):
             entities.append(HomgarLastSyncSensor(coordinator, device_id, device))
-            for zone in [1, 2, 3]:
+            for zone in device.ZONE_NUMBERS:
                 entities.extend([
                     HomgarZoneStatusSensor(coordinator, device_id, device, zone),
                     HomgarCountdownTimerSensor(coordinator, device_id, device, zone),

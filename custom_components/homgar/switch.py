@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import HomgarConfigEntry
 from .const import ICON_IRRIGATION_ZONE, ZONE_STATUS_ON, CONF_DURATION, DEFAULT_IRRIGATION_DURATION
 from .coordinator import HomgarDataUpdateCoordinator
-from .devices import DiivooWT11W, RainPoint2ZoneTimer, HWG0538WRF, HTV405FRF
+from .devices import DiivooWTBase, RainPoint2ZoneTimer, HWG0538WRF, HTV405FRF
 from .entity import HomgarEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,8 +29,8 @@ async def async_setup_entry(
 
     # Create switches for each irrigation zone
     for device_id, device in coordinator.devices.items():
-        if isinstance(device, DiivooWT11W):
-            for zone in [1, 2, 3]:
+        if isinstance(device, DiivooWTBase):
+            for zone in device.ZONE_NUMBERS:
                 entities.append(
                     HomgarZoneSwitch(coordinator, device_id, device, zone)
                 )
@@ -69,7 +69,7 @@ class HomgarZoneSwitch(HomgarEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the zone is on."""
-        if isinstance(self.device, (DiivooWT11W, HTV405FRF)):
+        if isinstance(self.device, (DiivooWTBase, HTV405FRF)):
             return self.device.is_zone_active(self.zone)
 
         # For other timer types, implement as needed
@@ -80,7 +80,7 @@ class HomgarZoneSwitch(HomgarEntity, SwitchEntity):
         """Return extra state attributes."""
         attrs = super().extra_state_attributes
         
-        if isinstance(self.device, DiivooWT11W):
+        if isinstance(self.device, DiivooWTBase):
             attrs.update({
                 "zone_status": self.device.get_zone_status_text(self.zone),
                 "countdown_timer": self.device.get_zone_countdown_timer(self.zone),
