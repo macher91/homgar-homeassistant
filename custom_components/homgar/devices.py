@@ -736,6 +736,18 @@ class DiivooWT11W(DiivooWTBase):
     TICK_CORRECTION_FACTOR = 1.15
 
 
+class DiivooWT13W(DiivooWTBase):
+    """Diivoo WT-13W 4-Zone Water Timer (modelCode 271)."""
+    MODEL_CODES = [271]
+    FRIENDLY_DESC = "Diivoo WT-13W 4-Zone Water Timer"
+
+    ZONE_NUMBERS = [1, 2, 3, 4]
+    PORT_STATUS_PATTERNS = ['19D8', '1AD8', '1BD8', '1CD8']
+    TIMER_PATTERNS = ['21B7', '22B7', '23B7', '24B7']
+    DURATION_PATTERNS = ['25AD', '26AD', '27AD', '28AD']
+    TICK_CORRECTION_FACTOR = 1.15
+
+
 class DiivooWT09W(DiivooWTBase):
     """Diivoo WT-09W 2-Zone Water Timer (HTV0537FRF, modelCode 270)."""
     MODEL_CODES = [270]
@@ -845,6 +857,7 @@ MODEL_CODE_MAPPING = {
         RainPointRainSensor,
         RainPointAirSensor,
         RainPoint2ZoneTimer,
+        DiivooWT13W,
         DiivooWT11W,
         DiivooWT09W,
         DiivooWT07W,
