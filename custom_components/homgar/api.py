@@ -603,6 +603,35 @@ class HomgarApi:
                     if 'param' in params and isinstance(params['param'], str) and params['param'].startswith('#P'):
                         logger.info("Detected nested #P payload format - extracting inner data")
                         try:
+                            p_str = params['param']
+                            if len(p_str) > 27 and p_str.endswith('#'):
+                                body = p_str[26:-1]
+                                
+                                # Check if body is a hex TLV string (e.g. 11#...)
+                                import re
+                                if re.match(r'^\d+#', body):
+                                    logger.info("Detected hex TLV body in #P payload")
+                                    # We don't have mid easily available, try extracting from prefix
+                                    # or fallback to data.get('mid')
+                                    mid = data.get('deviceId') or data.get('mid')
+                                    raw_prefix = p_str[:26]
+                                    match = re.search(r'(\d{5,})$', raw_prefix)
+                                    if match:
+                                        mid = match.group(1)
+                                        
+                                    adapted_update = {
+                                        "id": "", # empty id so devices.py picks it up by value.startswith
+                                        "value": body,
+                                        "mid": mid,
+                                        "deviceId": mid
+                                    }
+                                    for i, callback in enumerate(self.status_callbacks):
+                                        try:
+                                            callback(adapted_update)
+                                        except Exception as callback_error:
+                                            logger.error("Error in callback %d for #P update: %s", i, callback_error)
+                                    return
+
                             # Format is: #P[prefix_info]|[json_data]|[timestamp]|[maybe_more]#
                             parts = params['param'].split('|')
                             if len(parts) >= 2:
@@ -611,7 +640,6 @@ class HomgarApi:
                                 raw_prefix = parts[0]
                                 mid = None
                                 # Try to find a numeric ID at the end of the prefix
-                                import re
                                 match = re.search(r'(\d{5,})$', raw_prefix)
                                 if match:
                                     raw_id = match.group(1)
