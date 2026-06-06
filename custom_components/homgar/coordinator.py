@@ -271,16 +271,7 @@ class HomgarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     # Create a copy of data to avoid side effects between multiple devices
                     device_data = dict(data)
                     
-                    # Special handling for hub-level hex status (D01) that contains data for all zones
-                    # We map D01 to the specific device's expected Dxx ID so it accepts the update
-                    if (device_data.get('id') == 'D01' and 
-                        str(device_data.get('value', '')).startswith('11#') and 
-                        hasattr(device, 'address')):
-                        
-                        target_id = f"D{device.address:02d}"
-                        if device_data['id'] != target_id:
-                            _LOGGER.debug("Mapping D01 update to %s for device %s", target_id, dev_id)
-                            device_data['id'] = target_id
+                    # We don't map D01 to other IDs anymore. D01 is just the subdevice at address 1.
                     
                     # Update device status based on MQTT data
                     if hasattr(device, 'set_device_status'):
