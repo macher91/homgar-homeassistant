@@ -421,6 +421,15 @@ class HomgarApi:
                 logger.debug("MQTT already connecting or connected")
                 return True
                 
+            if self.mqtt_client:
+                logger.debug("Cleaning up old disconnected MQTT client")
+                try:
+                    self.mqtt_client.loop_stop()
+                    self.mqtt_client.disconnect()
+                except Exception as e:
+                    logger.debug("Error cleaning up old MQTT client: %s", e)
+                self.mqtt_client = None
+                
             self._mqtt_connecting = True
                 
             try:
